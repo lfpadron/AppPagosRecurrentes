@@ -1,7 +1,7 @@
 """sync metadata and schema version marker
 
-Revision ID: 0005_sync_metadata_schema_version
-Revises: 0004_payment_method_recurrence_limits
+Revision ID: 0005_sync_meta_schema
+Revises: 0004_pay_method_recur_limits
 Create Date: 2026-06-04 00:00:00.000000
 """
 
@@ -10,8 +10,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0005_sync_metadata_schema_version"
-down_revision: Union[str, None] = "0004_payment_method_recurrence_limits"
+revision: str = "0005_sync_meta_schema"
+down_revision: Union[str, None] = "0004_pay_method_recur_limits"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

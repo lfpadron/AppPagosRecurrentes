@@ -1,6 +1,6 @@
 """payment method and recurrence limits
 
-Revision ID: 0004_payment_method_recurrence_limits
+Revision ID: 0004_pay_method_recur_limits
 Revises: 0003_weekend_adjustment
 Create Date: 2026-05-22 00:00:00.000000
 """
@@ -9,7 +9,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0004_payment_method_recurrence_limits"
+revision = "0004_pay_method_recur_limits"
 down_revision = "0003_weekend_adjustment"
 branch_labels = None
 depends_on = None
