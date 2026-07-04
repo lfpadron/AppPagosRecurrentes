@@ -71,6 +71,12 @@ cd /opt/pagos-recurrentes
 bash deploy/backup_postgres.sh
 ```
 
+El script usa por omision `docker.io/library/postgres:18-alpine` porque el PostgreSQL administrado actual esta en version mayor 18. Si DigitalOcean cambia la version mayor de la base, usa el cliente igual o mas nuevo:
+
+```bash
+POSTGRES_IMAGE=docker.io/library/postgres:19-alpine bash deploy/backup_postgres.sh
+```
+
 Los archivos quedan en:
 
 ```text
@@ -91,6 +97,12 @@ Desde el Droplet como root:
 ```bash
 cd /opt/pagos-recurrentes
 bash deploy/install_backup_timer.sh
+```
+
+Si tu base administrada esta en otra version mayor de PostgreSQL:
+
+```bash
+POSTGRES_IMAGE=docker.io/library/postgres:18-alpine bash deploy/install_backup_timer.sh
 ```
 
 Consultar estado:

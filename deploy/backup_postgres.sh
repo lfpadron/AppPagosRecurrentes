@@ -5,8 +5,9 @@ APP_DIR="${APP_DIR:-/opt/pagos-recurrentes}"
 ENV_FILE="${ENV_FILE:-$APP_DIR/.env.production}"
 BACKUP_DIR="${BACKUP_DIR:-$APP_DIR/backups/postgres}"
 BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
-POSTGRES_IMAGE="${POSTGRES_IMAGE:-docker.io/library/postgres:16-alpine}"
+POSTGRES_IMAGE="${POSTGRES_IMAGE:-docker.io/library/postgres:18-alpine}"
 TZ="${TZ:-America/Mexico_City}"
+BACKUP_COMPLETED=0
 
 log() {
   printf '\n[%s] %s\n' "$(TZ="$TZ" date '+%Y-%m-%d %H:%M:%S')" "$*"
@@ -16,6 +17,14 @@ fail() {
   printf '\n[ERROR] %s\n' "$*" >&2
   exit 1
 }
+
+cleanup_incomplete_backup() {
+  if [[ "$BACKUP_COMPLETED" == "0" && -n "${BACKUP_PATH:-}" ]]; then
+    rm -f "$BACKUP_PATH" "$BACKUP_PATH.sha256"
+  fi
+}
+
+trap cleanup_incomplete_backup ERR
 
 read_env_value() {
   local key="$1"
@@ -51,6 +60,7 @@ BACKUP_BASENAME="pagos_recurrentes_${TIMESTAMP}.dump"
 BACKUP_PATH="$BACKUP_DIR/$BACKUP_BASENAME"
 
 log "Creando backup PostgreSQL en $BACKUP_PATH"
+rm -f "$BACKUP_PATH" "$BACKUP_PATH.sha256"
 podman run --rm \
   --name pagos-postgres-backup \
   -e "PG_DUMP_URL=$DB_URL" \
@@ -61,6 +71,7 @@ podman run --rm \
 
 sha256sum "$BACKUP_PATH" > "$BACKUP_PATH.sha256"
 chmod 600 "$BACKUP_PATH" "$BACKUP_PATH.sha256"
+BACKUP_COMPLETED=1
 
 log "Backup creado"
 ls -lh "$BACKUP_PATH" "$BACKUP_PATH.sha256"

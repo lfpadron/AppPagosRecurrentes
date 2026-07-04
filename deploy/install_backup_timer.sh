@@ -6,6 +6,7 @@ ENV_FILE="${ENV_FILE:-$APP_DIR/.env.production}"
 BACKUP_SCRIPT="${BACKUP_SCRIPT:-$APP_DIR/deploy/backup_postgres.sh}"
 BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
 BACKUP_ON_CALENDAR="${BACKUP_ON_CALENDAR:-*-*-* 03:15:00}"
+POSTGRES_IMAGE="${POSTGRES_IMAGE:-docker.io/library/postgres:18-alpine}"
 
 if [[ "$(id -u)" != "0" ]]; then
   echo "[ERROR] Ejecuta este script como root." >&2
@@ -28,6 +29,7 @@ Type=oneshot
 Environment=APP_DIR=$APP_DIR
 Environment=ENV_FILE=$ENV_FILE
 Environment=BACKUP_RETENTION_DAYS=$BACKUP_RETENTION_DAYS
+Environment=POSTGRES_IMAGE=$POSTGRES_IMAGE
 ExecStart=/bin/bash $BACKUP_SCRIPT
 EOF
 
