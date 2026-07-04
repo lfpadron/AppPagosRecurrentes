@@ -9,6 +9,7 @@ Primera version funcional de una app monetizable para controlar pagos recurrente
 - `scripts/seed.py`: datos demo minimos.
 - `mobile/`: app Flutter con capas `core`, `features` y `shared`.
 - `docker-compose.yml`: PostgreSQL + API.
+- `deploy/`: scripts de despliegue productivo con Podman, Flutter Web y backups.
 
 ## Backend
 
@@ -45,6 +46,20 @@ uvicorn app.main:app --reload
 
 ```powershell
 py -3 -m pytest app/tests
+```
+
+### Produccion
+
+Los scripts para DigitalOcean Droplet + Managed PostgreSQL viven en:
+
+```text
+deploy/
+```
+
+Documentacion rapida:
+
+```text
+deploy/README.md
 ```
 
 ### Usuario temporal
