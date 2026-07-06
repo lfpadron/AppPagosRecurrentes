@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/storage/local_app_database.dart';
 import '../../../shared/app_preferences.dart';
+import '../../../shared/auth/auth_session_controller.dart';
 import '../../../shared/formatters.dart';
 import '../../../shared/platform/app_platform.dart';
 import '../../../shared/widgets/sync_conflict_dialog.dart';
@@ -243,6 +244,7 @@ class _ProfileCard extends StatelessWidget {
             if (emailController.text != (prefs.localUserEmail ?? '')) {
               emailController.text = prefs.localUserEmail ?? '';
             }
+            final remoteAuth = AppConfig.supabaseAuthEnabled;
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -281,7 +283,11 @@ class _ProfileCard extends StatelessWidget {
                       label: const Text('Guardar usuario'),
                     ),
                     OutlinedButton.icon(
-                      onPressed: prefs.hasLocalUser ? prefs.closeSession : null,
+                      onPressed: remoteAuth
+                          ? AuthSessionController.instance.signOut
+                          : prefs.hasLocalUser
+                          ? prefs.closeSession
+                          : null,
                       icon: const Icon(Icons.logout),
                       label: const Text('Cerrar sesion'),
                     ),

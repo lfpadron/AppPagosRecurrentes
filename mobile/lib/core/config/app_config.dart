@@ -14,5 +14,18 @@ class AppConfig {
     defaultValue: 'auto',
   );
 
+  static const supabaseUrl = String.fromEnvironment(
+    'SUPABASE_URL',
+    defaultValue: '',
+  );
+
+  static const supabaseAnonKey = String.fromEnvironment(
+    'SUPABASE_ANON_KEY',
+    defaultValue: '',
+  );
+
   static bool get forceLocalData => dataMode.toLowerCase() == 'local';
+
+  static bool get supabaseAuthEnabled =>
+      supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
 }

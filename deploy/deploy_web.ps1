@@ -3,6 +3,8 @@ param(
   [string]$User = "root",
   [string]$SshKey = ".\pagosrec_dev",
   [string]$ApiBaseUrl = "https://api.pagos-recurrentes.com",
+  [string]$SupabaseUrl = "",
+  [string]$SupabaseAnonKey = "",
   [string]$RemotePath = "/var/www/pagos-recurrentes-app"
 )
 
@@ -17,7 +19,20 @@ Push-Location $MobileDir
 try {
   flutter clean
   flutter pub get
-  flutter build web --release "--dart-define=API_BASE_URL=$ApiBaseUrl" "--dart-define=DATA_MODE=api"
+  $buildArgs = @(
+    "build",
+    "web",
+    "--release",
+    "--dart-define=API_BASE_URL=$ApiBaseUrl",
+    "--dart-define=DATA_MODE=api"
+  )
+  if ($SupabaseUrl -ne "") {
+    $buildArgs += "--dart-define=SUPABASE_URL=$SupabaseUrl"
+  }
+  if ($SupabaseAnonKey -ne "") {
+    $buildArgs += "--dart-define=SUPABASE_ANON_KEY=$SupabaseAnonKey"
+  }
+  flutter @buildArgs
 } finally {
   Pop-Location
 }

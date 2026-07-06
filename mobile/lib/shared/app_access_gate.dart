@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../core/config/app_config.dart';
 import 'app_preferences.dart';
+import 'auth/auth_session_controller.dart';
 
 class AppAccessGate extends StatelessWidget {
   const AppAccessGate({required this.child, super.key});
@@ -11,13 +12,15 @@ class AppAccessGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isRemoteWeb = kIsWeb && !AppConfig.forceLocalData;
+    if (isRemoteWeb) {
+      return _RemotePremiumGate(child: child);
+    }
+
     return AnimatedBuilder(
       animation: AppPreferences.instance,
       builder: (context, _) {
         final prefs = AppPreferences.instance;
-        if (kIsWeb && !prefs.isPremium && !AppConfig.forceLocalData) {
-          return const _PremiumWebGate();
-        }
         if (!prefs.hasLocalUser) {
           return const _LocalUserSetupPage();
         }
@@ -191,17 +194,81 @@ class _PinUnlockPageState extends State<_PinUnlockPage> {
   }
 }
 
-class _PremiumWebGate extends StatefulWidget {
-  const _PremiumWebGate();
+class _RemotePremiumGate extends StatefulWidget {
+  const _RemotePremiumGate({required this.child});
 
   @override
-  State<_PremiumWebGate> createState() => _PremiumWebGateState();
+  State<_RemotePremiumGate> createState() => _RemotePremiumGateState();
+
+  final Widget child;
 }
 
-class _PremiumWebGateState extends State<_PremiumWebGate> {
+class _RemotePremiumGateState extends State<_RemotePremiumGate> {
+  bool _requestedProfile = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = AuthSessionController.instance;
+    return AnimatedBuilder(
+      animation: auth,
+      builder: (context, _) {
+        if (!auth.isConfigured) {
+          return const _AuthNotConfiguredPage();
+        }
+        if (!auth.isSignedIn) {
+          _requestedProfile = false;
+          return const _PremiumWebLoginPage();
+        }
+
+        if (auth.profile == null &&
+            !auth.loadingProfile &&
+            auth.profileError == null &&
+            !_requestedProfile) {
+          _requestedProfile = true;
+          Future.microtask(() => auth.loadProfile());
+        }
+
+        if (auth.loadingProfile || auth.profile == null) {
+          if (auth.profileError != null) {
+            return _AuthErrorPage(message: auth.profileError!);
+          }
+          return const _AccessScaffold(
+            title: 'Validando acceso',
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Revisando plan Premium...'),
+              ],
+            ),
+          );
+        }
+
+        if (!auth.profile!.isPremium) {
+          return _PremiumRequiredPage(email: auth.profile!.email);
+        }
+
+        return widget.child;
+      },
+    );
+  }
+}
+
+class _PremiumWebLoginPage extends StatefulWidget {
+  const _PremiumWebLoginPage();
+
+  @override
+  State<_PremiumWebLoginPage> createState() => _PremiumWebLoginPageState();
+}
+
+class _PremiumWebLoginPageState extends State<_PremiumWebLoginPage> {
   final _emailController = TextEditingController();
   final _otpController = TextEditingController();
   String? _error;
+  String? _message;
+  bool _sending = false;
+  bool _validating = false;
 
   @override
   void dispose() {
@@ -241,15 +308,52 @@ class _PremiumWebGateState extends State<_PremiumWebGate> {
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ],
+          if (_message != null) ...[
+            const SizedBox(height: 10),
+            Text(_message!),
+          ],
           const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: _validate,
-            icon: const Icon(Icons.verified_user_outlined),
-            label: const Text('Validar acceso'),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _sending ? null : _sendOtp,
+                icon: const Icon(Icons.mail_outline),
+                label: Text(_sending ? 'Enviando...' : 'Enviar codigo'),
+              ),
+              FilledButton.icon(
+                onPressed: _validating ? null : _validate,
+                icon: const Icon(Icons.verified_user_outlined),
+                label: Text(_validating ? 'Validando...' : 'Validar acceso'),
+              ),
+            ],
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _sendOtp() async {
+    final email = _emailController.text.trim().toLowerCase();
+    if (!email.contains('@')) {
+      setState(() => _error = 'Correo invalido.');
+      return;
+    }
+    setState(() {
+      _sending = true;
+      _error = null;
+      _message = null;
+    });
+    try {
+      await AuthSessionController.instance.sendOtp(email);
+      setState(() => _message = 'Codigo enviado. Revisa tu correo.');
+    } catch (error) {
+      setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
   }
 
   Future<void> _validate() async {
@@ -259,9 +363,105 @@ class _PremiumWebGateState extends State<_PremiumWebGate> {
       setState(() => _error = 'Correo u OTP invalido.');
       return;
     }
-    final prefs = AppPreferences.instance;
-    await prefs.setLocalUser(name: prefs.localUserName ?? '', email: email);
-    prefs.setSubscriptionPlanForLocalTesting(SubscriptionPlan.premium);
+    setState(() {
+      _validating = true;
+      _error = null;
+    });
+    try {
+      await AuthSessionController.instance.verifyOtp(email, otp);
+    } catch (error) {
+      setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _validating = false);
+    }
+  }
+}
+
+class _AuthNotConfiguredPage extends StatelessWidget {
+  const _AuthNotConfiguredPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return const _AccessScaffold(
+      title: 'Auth no configurado',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.admin_panel_settings_outlined, size: 48),
+          SizedBox(height: 12),
+          Text(
+            'Configura SUPABASE_URL y SUPABASE_ANON_KEY al construir la web app.',
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AuthErrorPage extends StatelessWidget {
+  const _AuthErrorPage({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return _AccessScaffold(
+      title: 'Acceso Premium',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.error_outline, size: 48),
+          const SizedBox(height: 12),
+          Text(message, textAlign: TextAlign.center),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: () => AuthSessionController.instance.loadProfile(
+              force: true,
+            ),
+            icon: const Icon(Icons.refresh),
+            label: const Text('Reintentar'),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: AuthSessionController.instance.signOut,
+            child: const Text('Cerrar sesion'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PremiumRequiredPage extends StatelessWidget {
+  const _PremiumRequiredPage({required this.email});
+
+  final String email;
+
+  @override
+  Widget build(BuildContext context) {
+    return _AccessScaffold(
+      title: 'Plan Premium requerido',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.workspace_premium_outlined, size: 48),
+          const SizedBox(height: 12),
+          Text(email, textAlign: TextAlign.center),
+          const SizedBox(height: 8),
+          const Text(
+            'La web app esta disponible para usuarios Premium.',
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: AuthSessionController.instance.signOut,
+            icon: const Icon(Icons.logout),
+            label: const Text('Cerrar sesion'),
+          ),
+        ],
+      ),
+    );
   }
 }
 

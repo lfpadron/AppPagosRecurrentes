@@ -123,6 +123,31 @@ La app queda preparada para el modelo local-first antes del VPS:
 - La base local tiene `schema_version`; PostgreSQL tiene tabla `app_schema_versions`.
 - Existe UI base para resolver conflictos mostrando plataforma y fecha/hora de cada version, con opcion de aplicar a todos.
 
+### Auth real y web premium
+
+La API soporta `AUTH_PROVIDER=local` para desarrollo y `AUTH_PROVIDER=supabase` para produccion. En modo Supabase, FastAPI exige `Authorization: Bearer <token>` y valida la sesion contra Supabase Auth.
+
+Variables productivas:
+
+```env
+AUTH_PROVIDER=supabase
+SUPABASE_URL=https://TU_PROYECTO.supabase.co
+SUPABASE_ANON_KEY=TU_SUPABASE_ANON_KEY
+REQUIRE_PREMIUM_FOR_API=true
+PREMIUM_EMAIL_ALLOWLIST=tu-correo@dominio.com
+```
+
+`PREMIUM_EMAIL_ALLOWLIST` es temporal para pruebas y administracion inicial. La web app consulta `/auth/me` y solo permite entrar si el usuario tiene Premium activo por allowlist o por la tabla `user_entitlements`.
+
+Al publicar Flutter Web, construir con:
+
+```powershell
+.\deploy\deploy_web.ps1 `
+  -SshKey .\pagosrec_dev `
+  -SupabaseUrl "https://TU_PROYECTO.supabase.co" `
+  -SupabaseAnonKey "TU_SUPABASE_ANON_KEY"
+```
+
 Pruebas de tienda recomendadas antes de publicar:
 
 1. APK instalado manualmente.

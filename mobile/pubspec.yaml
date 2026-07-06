@@ -41,6 +41,7 @@ dependencies:
   shared_preferences: ^2.5.5
   archive: ^3.6.1
   crypto: ^3.0.7
+  supabase_flutter: ^2.15.4
 
 dev_dependencies:
   flutter_test:

@@ -12,6 +12,7 @@ from app.models.service_account import ServiceAccount
 from app.models.service_exception import ServiceException
 from app.models.service_version import ServiceVersion
 from app.models.user import User
+from app.models.user_entitlement import UserEntitlement
 
 __all__ = [
     "Attachment",
@@ -26,4 +27,5 @@ __all__ = [
     "WeekendAdjustment",
     "ServiceVersion",
     "User",
+    "UserEntitlement",
 ]

@@ -53,7 +53,10 @@ bash deploy/deploy_api.sh
 Desde Windows, en la raiz del repo:
 
 ```powershell
-.\deploy\deploy_web.ps1 -SshKey .\pagosrec_dev
+.\deploy\deploy_web.ps1 `
+  -SshKey .\pagosrec_dev `
+  -SupabaseUrl "https://TU_PROYECTO.supabase.co" `
+  -SupabaseAnonKey "TU_SUPABASE_ANON_KEY"
 ```
 
 La web queda en:

@@ -18,6 +18,7 @@ class ApiClient {
   ApiClient({
     required String baseUrl,
     required this.userId,
+    this.accessTokenProvider,
     http.Client? httpClient,
   }) : baseUrl = baseUrl.endsWith('/')
            ? baseUrl.substring(0, baseUrl.length - 1)
@@ -26,12 +27,20 @@ class ApiClient {
 
   final String baseUrl;
   final String userId;
+  final Future<String?> Function()? accessTokenProvider;
   final http.Client _httpClient;
 
-  Map<String, String> get _headers => {
-    'Content-Type': 'application/json',
-    'X-User-Id': userId,
-  };
+  Future<Map<String, String>> _headers() async {
+    final headers = {
+      'Content-Type': 'application/json',
+      'X-User-Id': userId,
+    };
+    final token = await accessTokenProvider?.call();
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+    return headers;
+  }
 
   Uri _uri(String path, [Map<String, Object?> query = const {}]) {
     final normalizedPath = path.startsWith('/') ? path : '/$path';
@@ -52,7 +61,7 @@ class ApiClient {
   ]) async {
     final response = await _httpClient.get(
       _uri(path, query),
-      headers: _headers,
+      headers: await _headers(),
     );
     return _decode(response);
   }
@@ -89,7 +98,7 @@ class ApiClient {
   Future<dynamic> postJson(String path, Map<String, Object?> body) async {
     final response = await _httpClient.post(
       _uri(path),
-      headers: _headers,
+      headers: await _headers(),
       body: jsonEncode(body),
     );
     return _decode(response);
@@ -98,7 +107,7 @@ class ApiClient {
   Future<dynamic> patchJson(String path, Map<String, Object?> body) async {
     final response = await _httpClient.patch(
       _uri(path),
-      headers: _headers,
+      headers: await _headers(),
       body: jsonEncode(body),
     );
     return _decode(response);

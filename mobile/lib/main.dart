@@ -13,14 +13,17 @@ import 'features/services/data/services_api.dart';
 import 'shared/app_preferences.dart';
 import 'shared/app_access_gate.dart';
 import 'shared/app_shell.dart';
+import 'shared/auth/auth_session_controller.dart';
 import 'shared/dependencies.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AppPreferences.instance.load();
+  await AuthSessionController.instance.initialize();
   final apiClient = ApiClient(
     baseUrl: AppConfig.apiBaseUrl,
     userId: AppConfig.userId,
+    accessTokenProvider: () async => AuthSessionController.instance.accessToken,
   );
   final localDatabase = LocalAppDatabase(userId: AppConfig.userId);
   final useLocalData =
