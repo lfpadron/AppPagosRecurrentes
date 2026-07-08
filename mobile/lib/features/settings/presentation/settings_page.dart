@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../../../core/config/app_config.dart';
 import '../../../core/storage/local_app_database.dart';
+import '../../../features/sync/data/sync_api.dart';
 import '../../../shared/app_preferences.dart';
 import '../../../shared/auth/auth_session_controller.dart';
+import '../../../shared/dependencies.dart';
 import '../../../shared/formatters.dart';
 import '../../../shared/platform/app_platform.dart';
 import '../../../shared/widgets/sync_conflict_dialog.dart';
@@ -183,7 +185,10 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 12),
           _PlanCard(),
           const SizedBox(height: 12),
-          _SyncPrepCard(localDatabase: _localDatabase),
+          _SyncPrepCard(
+            localDatabase: _localDatabase,
+            syncApi: DependenciesScope.of(context).syncApi,
+          ),
           const SizedBox(height: 12),
           Card(
             child: ListTile(
@@ -428,68 +433,270 @@ class _PlanCard extends StatelessWidget {
   }
 }
 
-class _SyncPrepCard extends StatelessWidget {
-  const _SyncPrepCard({required this.localDatabase});
+class _SyncPrepCard extends StatefulWidget {
+  const _SyncPrepCard({required this.localDatabase, required this.syncApi});
 
   final LocalAppDatabase localDatabase;
+  final SyncApi syncApi;
+
+  @override
+  State<_SyncPrepCard> createState() => _SyncPrepCardState();
+}
+
+class _SyncPrepCardState extends State<_SyncPrepCard> {
+  final _syncEmailController = TextEditingController();
+  final _syncOtpController = TextEditingController();
+  bool _sendingOtp = false;
+  bool _validatingOtp = false;
+  bool _syncing = false;
+  String? _message;
+  String? _error;
+
+  @override
+  void dispose() {
+    _syncEmailController.dispose();
+    _syncOtpController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Sincronizacion',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 12),
-            FutureBuilder<String>(
-              future: localDatabase.storedDeviceId(),
-              builder: (context, snapshot) =>
-                  Text('Dispositivo: ${snapshot.data ?? '-'}'),
-            ),
-            FutureBuilder<int>(
-              future: localDatabase.storedSchemaVersion(),
-              builder: (context, snapshot) => Text(
-                'Esquema local: ${snapshot.data ?? LocalAppDatabase.currentSchemaVersion}',
-              ),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () async {
-                await showDialog<SyncConflictResolution>(
-                  context: context,
-                  builder: (context) => SyncConflictDialog(
-                    local: SyncConflictCandidate(
-                      title: 'Version celular',
-                      subtitle: 'Pago marcado como pagado',
-                      platform: 'android',
-                      modifiedAt: DateTime.now().subtract(
-                        const Duration(minutes: 4),
-                      ),
-                    ),
-                    remote: SyncConflictCandidate(
-                      title: 'Version web',
-                      subtitle: 'Pago cancelado',
-                      platform: 'web',
-                      modifiedAt: DateTime.now().subtract(
-                        const Duration(minutes: 2),
-                      ),
-                    ),
+        child: AnimatedBuilder(
+          animation: AuthSessionController.instance,
+          builder: (context, _) {
+            final auth = AuthSessionController.instance;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Sincronizacion',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 12),
+                FutureBuilder<String>(
+                  future: widget.localDatabase.storedDeviceId(),
+                  builder: (context, snapshot) =>
+                      Text('Dispositivo: ${snapshot.data ?? '-'}'),
+                ),
+                FutureBuilder<int>(
+                  future: widget.localDatabase.storedSchemaVersion(),
+                  builder: (context, snapshot) => Text(
+                    'Esquema local: ${snapshot.data ?? LocalAppDatabase.currentSchemaVersion}',
                   ),
-                );
-              },
-              icon: const Icon(Icons.merge_type_outlined),
-              label: const Text('Probar conflicto'),
-            ),
-            const SizedBox(height: 8),
-            Text('Ultima revision: ${formatDateTime(DateTime.now())}'),
-          ],
+                ),
+                FutureBuilder<DateTime?>(
+                  future: widget.localDatabase.storedLastBootstrapAt(),
+                  builder: (context, snapshot) => Text(
+                    'Ultimo bootstrap: ${snapshot.data == null ? '-' : formatDateTime(snapshot.data!)}',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (!AppConfig.supabaseAuthEnabled)
+                  const Text(
+                    'Configura Supabase para activar sync con el servidor.',
+                  )
+                else if (!auth.isSignedIn)
+                  _SyncLoginForm(
+                    emailController: _syncEmailController,
+                    otpController: _syncOtpController,
+                    sendingOtp: _sendingOtp,
+                    validatingOtp: _validatingOtp,
+                    onSendOtp: _sendSyncOtp,
+                    onValidateOtp: _validateSyncOtp,
+                  )
+                else ...[
+                  Text('Sesion: ${auth.userEmail ?? '-'}'),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: _syncing ? null : _bootstrapLocal,
+                        icon: const Icon(Icons.cloud_upload_outlined),
+                        label: Text(
+                          _syncing ? 'Sincronizando...' : 'Subir datos locales',
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _showConflictDemo,
+                        icon: const Icon(Icons.merge_type_outlined),
+                        label: const Text('Probar conflicto'),
+                      ),
+                    ],
+                  ),
+                ],
+                if (_message != null) ...[
+                  const SizedBox(height: 8),
+                  Text(_message!),
+                ],
+                if (_error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _error!,
+                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                  ),
+                ],
+              ],
+            );
+          },
         ),
       ),
+    );
+  }
+
+  Future<void> _sendSyncOtp() async {
+    final email = _syncEmailController.text.trim().toLowerCase();
+    if (!email.contains('@')) {
+      setState(() => _error = 'Correo invalido.');
+      return;
+    }
+    setState(() {
+      _sendingOtp = true;
+      _error = null;
+      _message = null;
+    });
+    try {
+      await AuthSessionController.instance.sendOtp(email);
+      setState(() => _message = 'Codigo enviado. Revisa tu correo.');
+    } catch (error) {
+      setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _sendingOtp = false);
+    }
+  }
+
+  Future<void> _validateSyncOtp() async {
+    final email = _syncEmailController.text.trim().toLowerCase();
+    final otp = _syncOtpController.text.trim();
+    if (!email.contains('@') || !RegExp(r'^\d{6}$').hasMatch(otp)) {
+      setState(() => _error = 'Correo u OTP invalido.');
+      return;
+    }
+    setState(() {
+      _validatingOtp = true;
+      _error = null;
+      _message = null;
+    });
+    try {
+      await AuthSessionController.instance.verifyOtp(email, otp);
+      setState(() => _message = 'Sesion validada.');
+    } catch (error) {
+      setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _validatingOtp = false);
+    }
+  }
+
+  Future<void> _bootstrapLocal() async {
+    setState(() {
+      _syncing = true;
+      _error = null;
+      _message = null;
+    });
+    try {
+      final status = await widget.syncApi.status();
+      if (!status.isPremium) {
+        setState(() => _error = 'La sincronizacion requiere plan Premium.');
+        return;
+      }
+      final result = await widget.syncApi.bootstrapLocal();
+      setState(() {
+        _message =
+            'Bootstrap listo. Servicios: ${result.importedServices} nuevos, '
+            '${result.updatedServices} actualizados. Pagos: '
+            '${result.importedPayments} nuevos, ${result.updatedPayments} actualizados, '
+            '${result.skippedPayments} omitidos. Conflictos: ${result.conflictCount}.';
+      });
+    } catch (error) {
+      setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  Future<void> _showConflictDemo() async {
+    await showDialog<SyncConflictResolution>(
+      context: context,
+      builder: (context) => SyncConflictDialog(
+        local: SyncConflictCandidate(
+          title: 'Version celular',
+          subtitle: 'Pago marcado como pagado',
+          platform: 'android',
+          modifiedAt: DateTime.now().subtract(const Duration(minutes: 4)),
+        ),
+        remote: SyncConflictCandidate(
+          title: 'Version web',
+          subtitle: 'Pago cancelado',
+          platform: 'web',
+          modifiedAt: DateTime.now().subtract(const Duration(minutes: 2)),
+        ),
+      ),
+    );
+  }
+}
+
+class _SyncLoginForm extends StatelessWidget {
+  const _SyncLoginForm({
+    required this.emailController,
+    required this.otpController,
+    required this.sendingOtp,
+    required this.validatingOtp,
+    required this.onSendOtp,
+    required this.onValidateOtp,
+  });
+
+  final TextEditingController emailController;
+  final TextEditingController otpController;
+  final bool sendingOtp;
+  final bool validatingOtp;
+  final VoidCallback onSendOtp;
+  final VoidCallback onValidateOtp;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        TextField(
+          controller: emailController,
+          keyboardType: TextInputType.emailAddress,
+          decoration: const InputDecoration(
+            labelText: 'Correo Premium',
+            prefixIcon: Icon(Icons.mail_outline),
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: otpController,
+          maxLength: 6,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'OTP',
+            prefixIcon: Icon(Icons.pin_outlined),
+            counterText: '',
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton.icon(
+              onPressed: sendingOtp ? null : onSendOtp,
+              icon: const Icon(Icons.mail_outline),
+              label: Text(sendingOtp ? 'Enviando...' : 'Enviar codigo'),
+            ),
+            FilledButton.icon(
+              onPressed: validatingOtp ? null : onValidateOtp,
+              icon: const Icon(Icons.verified_user_outlined),
+              label: Text(validatingOtp ? 'Validando...' : 'Validar'),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

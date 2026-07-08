@@ -83,7 +83,7 @@ echo API_BASE_URL=%API_BASE_URL%
 echo DATA_MODE=%DATA_MODE%
 echo WEB_PORT=%WEB_PORT%
 cd /d "%MOBILE_DIR%" || exit /b 1
-call flutter run -d chrome --web-port %WEB_PORT% "--dart-define=API_BASE_URL=%API_BASE_URL%" "--dart-define=USER_ID=%USER_ID%" "--dart-define=DATA_MODE=%DATA_MODE%"
+call flutter run -d chrome --web-port %WEB_PORT% "--dart-define=API_BASE_URL=%API_BASE_URL%" "--dart-define=USER_ID=%USER_ID%" "--dart-define=DATA_MODE=%DATA_MODE%" "--dart-define=SUPABASE_URL=%SUPABASE_URL%" "--dart-define=SUPABASE_ANON_KEY=%SUPABASE_ANON_KEY%"
 exit /b %ERRORLEVEL%
 
 :run_android
@@ -104,7 +104,7 @@ echo DATA_MODE=%DATA_MODE%
 echo DEVICE=%ANDROID_DEVICE%
 echo Si tu emulador tiene otro id, revisa con: flutter devices
 cd /d "%MOBILE_DIR%" || exit /b 1
-call flutter run -d %ANDROID_DEVICE% "--dart-define=API_BASE_URL=%API_BASE_URL%" "--dart-define=USER_ID=%USER_ID%" "--dart-define=DATA_MODE=%DATA_MODE%"
+call flutter run -d %ANDROID_DEVICE% "--dart-define=API_BASE_URL=%API_BASE_URL%" "--dart-define=USER_ID=%USER_ID%" "--dart-define=DATA_MODE=%DATA_MODE%" "--dart-define=SUPABASE_URL=%SUPABASE_URL%" "--dart-define=SUPABASE_ANON_KEY=%SUPABASE_ANON_KEY%"
 exit /b %ERRORLEVEL%
 
 :build_web
@@ -121,7 +121,7 @@ echo [3/3] Construyendo Web release...
 echo API_BASE_URL=%API_BASE_URL%
 echo DATA_MODE=%DATA_MODE%
 cd /d "%MOBILE_DIR%" || exit /b 1
-call flutter build web --release "--dart-define=API_BASE_URL=%API_BASE_URL%" "--dart-define=USER_ID=%USER_ID%" "--dart-define=DATA_MODE=%DATA_MODE%"
+call flutter build web --release "--dart-define=API_BASE_URL=%API_BASE_URL%" "--dart-define=USER_ID=%USER_ID%" "--dart-define=DATA_MODE=%DATA_MODE%" "--dart-define=SUPABASE_URL=%SUPABASE_URL%" "--dart-define=SUPABASE_ANON_KEY=%SUPABASE_ANON_KEY%"
 exit /b %ERRORLEVEL%
 
 :build_apk
@@ -139,7 +139,7 @@ echo API_BASE_URL=%API_BASE_URL%
 echo DATA_MODE=%DATA_MODE%
 echo Nota: sin API_BASE_URL explicita, Android se construye en modo local y no necesita servidor.
 cd /d "%MOBILE_DIR%" || exit /b 1
-call flutter build apk --release "--dart-define=API_BASE_URL=%API_BASE_URL%" "--dart-define=USER_ID=%USER_ID%" "--dart-define=DATA_MODE=%DATA_MODE%"
+call flutter build apk --release "--dart-define=API_BASE_URL=%API_BASE_URL%" "--dart-define=USER_ID=%USER_ID%" "--dart-define=DATA_MODE=%DATA_MODE%" "--dart-define=SUPABASE_URL=%SUPABASE_URL%" "--dart-define=SUPABASE_ANON_KEY=%SUPABASE_ANON_KEY%"
 exit /b %ERRORLEVEL%
 
 :build_aab
@@ -157,7 +157,7 @@ echo API_BASE_URL=%API_BASE_URL%
 echo DATA_MODE=%DATA_MODE%
 echo Nota: sin API_BASE_URL explicita, Android se construye en modo local y no necesita servidor.
 cd /d "%MOBILE_DIR%" || exit /b 1
-call flutter build appbundle --release "--dart-define=API_BASE_URL=%API_BASE_URL%" "--dart-define=USER_ID=%USER_ID%" "--dart-define=DATA_MODE=%DATA_MODE%"
+call flutter build appbundle --release "--dart-define=API_BASE_URL=%API_BASE_URL%" "--dart-define=USER_ID=%USER_ID%" "--dart-define=DATA_MODE=%DATA_MODE%" "--dart-define=SUPABASE_URL=%SUPABASE_URL%" "--dart-define=SUPABASE_ANON_KEY=%SUPABASE_ANON_KEY%"
 exit /b %ERRORLEVEL%
 
 :detect_lan_api_url
@@ -207,5 +207,7 @@ echo   build-apk: DATA_MODE=local ^(sin servidor^)
 echo.
 echo Variables opcionales:
 echo   set SKIP_DOCKER=1   Omitir docker compose up -d --build.
+echo   set SUPABASE_URL=https://TU_PROYECTO.supabase.co
+echo   set SUPABASE_ANON_KEY=TU_SUPABASE_ANON_PUBLIC_KEY
 echo.
 exit /b 0

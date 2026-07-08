@@ -41,4 +41,33 @@ void main() {
       expect(paid.lastModifiedDeviceId, startsWith('device-'));
     },
   );
+
+  test('local sync id mappings preserve payment service references', () async {
+    SharedPreferences.setMockInitialValues({});
+    final database = LocalAppDatabase(userId: 'local-user');
+    final servicesApi = ServicesApi.local(database);
+    final paymentsApi = PaymentsApi.local(database);
+
+    final service = (await servicesApi.listServices(limit: 1)).first;
+    final payment = (await paymentsApi.listPayments(limit: 1)).first;
+
+    await database.applyServerIdMappings(
+      serviceIdMap: {service.id: '11111111-1111-4111-8111-111111111111'},
+      paymentIdMap: {payment.id: '22222222-2222-4222-8222-222222222222'},
+      serverUserId: '33333333-3333-4333-8333-333333333333',
+    );
+
+    final remappedService = (await servicesApi.listServices(limit: 1)).first;
+    final remappedPayment = (await paymentsApi.listPayments(limit: 1)).first;
+
+    expect(remappedService.id, '11111111-1111-4111-8111-111111111111');
+    expect(remappedPayment.id, '22222222-2222-4222-8222-222222222222');
+    expect(
+      remappedPayment.serviceAccountId,
+      '11111111-1111-4111-8111-111111111111',
+    );
+    expect(remappedService.userId, '33333333-3333-4333-8333-333333333333');
+    expect(remappedPayment.userId, '33333333-3333-4333-8333-333333333333');
+    expect(await database.storedLastBootstrapAt(), isNotNull);
+  });
 }

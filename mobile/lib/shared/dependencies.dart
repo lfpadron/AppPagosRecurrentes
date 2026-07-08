@@ -4,6 +4,7 @@ import '../features/calendar/data/calendar_api.dart';
 import '../features/payments/data/payments_api.dart';
 import '../features/reports/data/reports_api.dart';
 import '../features/services/data/services_api.dart';
+import '../features/sync/data/sync_api.dart';
 
 class AppDependencies {
   const AppDependencies({
@@ -11,12 +12,14 @@ class AppDependencies {
     required this.paymentsApi,
     required this.calendarApi,
     required this.reportsApi,
+    required this.syncApi,
   });
 
   final ServicesApi servicesApi;
   final PaymentsApi paymentsApi;
   final CalendarApi calendarApi;
   final ReportsApi reportsApi;
+  final SyncApi syncApi;
 }
 
 class DependenciesScope extends InheritedWidget {

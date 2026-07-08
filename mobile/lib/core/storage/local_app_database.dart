@@ -17,6 +17,7 @@ class LocalAppDatabase {
   static const _seededKey = 'local_app_database:seeded_v2';
   static const _schemaVersionKey = 'local_app_database:schema_version';
   static const _deviceIdKey = 'local_app_database:device_id';
+  static const _lastBootstrapAtKey = 'local_app_database:last_bootstrap_at';
   static const _currentSchemaVersion = 3;
   static final _random = Random();
 
@@ -308,6 +309,58 @@ class LocalAppDatabase {
     return preferences.getInt(_schemaVersionKey) ?? 1;
   }
 
+  Future<DateTime?> storedLastBootstrapAt() async {
+    final preferences = await SharedPreferences.getInstance();
+    final raw = preferences.getString(_lastBootstrapAtKey);
+    return raw == null ? null : DateTime.tryParse(raw);
+  }
+
+  Future<LocalSyncSnapshot> exportSyncSnapshot() async {
+    await ensureInitialized();
+    final preferences = await SharedPreferences.getInstance();
+    return LocalSyncSnapshot(
+      deviceId: await _ensureDeviceId(preferences),
+      schemaVersion: preferences.getInt(_schemaVersionKey) ?? 1,
+      services: (await _readServices()).map((service) => service.toJson()).toList(),
+      payments: (await _readPayments()).map((payment) => payment.toJson()).toList(),
+    );
+  }
+
+  Future<void> applyServerIdMappings({
+    required Map<String, String> serviceIdMap,
+    required Map<String, String> paymentIdMap,
+    String? serverUserId,
+  }) async {
+    await ensureInitialized();
+    final services = await _readServices();
+    final nextServices = services.map((service) {
+      return service.copyWith(
+        id: serviceIdMap[service.id],
+        userId: serverUserId,
+      );
+    }).toList();
+
+    final payments = await _readPayments();
+    final nextPayments = payments.map((payment) {
+      final mappedServiceId = payment.serviceAccountId == null
+          ? null
+          : serviceIdMap[payment.serviceAccountId!];
+      return payment.copyWith(
+        id: paymentIdMap[payment.id],
+        userId: serverUserId,
+        serviceAccountId: mappedServiceId,
+      );
+    }).toList();
+
+    await _writeServices(nextServices);
+    await _writePayments(nextPayments);
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setString(
+      _lastBootstrapAtKey,
+      DateTime.now().toUtc().toIso8601String(),
+    );
+  }
+
   Future<ServiceAccount> _markServiceModified(ServiceAccount service) async {
     final preferences = await SharedPreferences.getInstance();
     return service.copyWith(
@@ -468,6 +521,20 @@ class LocalAppDatabase {
       jsonEncode(payments.map((payment) => payment.toJson()).toList()),
     );
   }
+}
+
+class LocalSyncSnapshot {
+  const LocalSyncSnapshot({
+    required this.deviceId,
+    required this.schemaVersion,
+    required this.services,
+    required this.payments,
+  });
+
+  final String deviceId;
+  final int schemaVersion;
+  final List<Map<String, Object?>> services;
+  final List<Map<String, Object?>> payments;
 }
 
 DateTime _dateOnly(DateTime value) =>

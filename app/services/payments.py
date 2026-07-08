@@ -31,6 +31,7 @@ def create_one_time_payment(
     icon_key: str | None = None,
     cutoff_date: date | None = None,
     estimated_amount: Decimal | None = None,
+    currency: str = "MXN",
     notes: str | None = None,
 ) -> PaymentInstance:
     if service:
@@ -58,6 +59,7 @@ def create_one_time_payment(
         service_icon_key_snapshot=icon_key or "service_default",
         cutoff_date=cutoff_date,
         due_date=due_date,
+        currency=currency,
         estimated_amount=estimated_amount,
         is_autopay_snapshot=False,
         generated_by_system=False,

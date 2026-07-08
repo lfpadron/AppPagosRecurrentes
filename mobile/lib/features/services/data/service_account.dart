@@ -207,14 +207,16 @@ class ServiceAccount {
   }
 
   ServiceAccount copyWith({
+    String? id,
+    String? userId,
     int? version,
     DateTime? lastModifiedAt,
     String? lastModifiedPlatform,
     String? lastModifiedDeviceId,
   }) {
     return ServiceAccount(
-      id: id,
-      userId: userId,
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
       active: active,
       status: status,
       pausedFrom: pausedFrom,

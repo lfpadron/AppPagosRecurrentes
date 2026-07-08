@@ -137,6 +137,7 @@ def generate_payments_for_service(
                 service_icon_key_snapshot=service.icon_key,
                 cutoff_date=cutoff_date,
                 due_date=due_date,
+                currency=service.currency,
                 estimated_amount=service.estimated_amount,
                 is_autopay_snapshot=service.is_autopay,
                 charge_account_snapshot=service.charge_account,

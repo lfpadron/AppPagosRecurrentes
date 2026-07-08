@@ -59,6 +59,8 @@ Desde Windows, en la raiz del repo:
   -SupabaseAnonKey "TU_SUPABASE_ANON_KEY"
 ```
 
+El script usa `--no-wasm-dry-run` para evitar fallas conocidas del dry-run wasm en algunos builds de Flutter/Windows.
+
 La web queda en:
 
 ```text

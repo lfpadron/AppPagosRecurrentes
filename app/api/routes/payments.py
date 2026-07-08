@@ -70,6 +70,7 @@ def create_one_time(
         cutoff_date=payload.cutoff_date,
         due_date=payload.due_date,
         estimated_amount=payload.estimated_amount,
+        currency=payload.currency,
         notes=payload.notes,
     )
     session.commit()
@@ -84,6 +85,7 @@ def list_payments(
     object_name: str | None = None,
     service_name: str | None = None,
     provider_name: str | None = None,
+    currency: str | None = None,
     is_autopay: bool | None = None,
     active: bool | None = None,
     status_filter: PaymentStatus | None = Query(default=None, alias="status"),
@@ -111,6 +113,8 @@ def list_payments(
         statement = statement.where(PaymentInstance.service_name_snapshot.ilike(f"%{service_name}%"))
     if provider_name:
         statement = statement.where(PaymentInstance.provider_name_snapshot.ilike(f"%{provider_name}%"))
+    if currency:
+        statement = statement.where(PaymentInstance.currency == currency.upper())
     if is_autopay is not None:
         statement = statement.where(PaymentInstance.is_autopay_snapshot == is_autopay)
     if not include_cancelled:

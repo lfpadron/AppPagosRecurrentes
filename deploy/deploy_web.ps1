@@ -23,6 +23,7 @@ try {
     "build",
     "web",
     "--release",
+    "--no-wasm-dry-run",
     "--dart-define=API_BASE_URL=$ApiBaseUrl",
     "--dart-define=DATA_MODE=api"
   )

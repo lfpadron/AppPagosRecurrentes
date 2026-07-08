@@ -10,6 +10,7 @@ import 'features/calendar/data/calendar_api.dart';
 import 'features/payments/data/payments_api.dart';
 import 'features/reports/data/reports_api.dart';
 import 'features/services/data/services_api.dart';
+import 'features/sync/data/sync_api.dart';
 import 'shared/app_preferences.dart';
 import 'shared/app_access_gate.dart';
 import 'shared/app_shell.dart';
@@ -38,12 +39,14 @@ Future<void> main() async {
               paymentsApi: PaymentsApi.local(localDatabase),
               calendarApi: CalendarApi.local(localDatabase),
               reportsApi: ReportsApi.local(localDatabase),
+              syncApi: SyncApi(apiClient: apiClient, localDatabase: localDatabase),
             )
           : AppDependencies(
               servicesApi: ServicesApi(apiClient),
               paymentsApi: PaymentsApi(apiClient),
               calendarApi: CalendarApi(apiClient),
               reportsApi: ReportsApi(apiClient),
+              syncApi: SyncApi(apiClient: apiClient, localDatabase: localDatabase),
             ),
       child: const PagosApp(),
     ),

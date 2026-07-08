@@ -11,6 +11,8 @@ from app.models.payment_instance import PaymentInstance
 from app.models.service_account import ServiceAccount
 from app.models.service_exception import ServiceException
 from app.models.service_version import ServiceVersion
+from app.models.sync_device import SyncDevice
+from app.models.sync_external_id import SyncExternalId
 from app.models.user import User
 from app.models.user_entitlement import UserEntitlement
 
@@ -26,6 +28,8 @@ __all__ = [
     "ServiceLifecycleStatus",
     "WeekendAdjustment",
     "ServiceVersion",
+    "SyncDevice",
+    "SyncExternalId",
     "User",
     "UserEntitlement",
 ]

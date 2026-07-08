@@ -90,6 +90,9 @@ Mientras se integra Supabase Auth o Firebase Auth, la API usa `X-User-Id`. Si no
 - `GET /reports/paid-summary?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&service_account_id=UUID`
 - `GET /reports/estimated-summary?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&service_account_id=UUID`
 - `POST /imports/excel`
+- `GET /sync/status`
+- `POST /sync/bootstrap`
+- `GET /sync/pull`
 
 ## Flutter
 
@@ -147,6 +150,32 @@ Al publicar Flutter Web, construir con:
   -SupabaseUrl "https://TU_PROYECTO.supabase.co" `
   -SupabaseAnonKey "TU_SUPABASE_ANON_KEY"
 ```
+
+### Bootstrap Android -> servidor
+
+La primera sincronizacion premium sube en lote los datos locales del celular al servidor:
+
+1. Construir APK/API con Supabase configurado.
+2. Abrir Android -> `Configuracion` -> `Sincronizacion`.
+3. Iniciar sesion con correo OTP.
+4. Tocar `Subir datos locales`.
+
+El backend guarda `sync_devices` y `sync_external_ids` para mapear IDs locales del celular a UUIDs del servidor. Esto evita duplicados si se ejecuta el bootstrap mas de una vez desde el mismo dispositivo.
+
+Construccion Android conectada a produccion:
+
+```powershell
+set SKIP_DOCKER=1
+set SUPABASE_URL=https://TU_PROYECTO.supabase.co
+set SUPABASE_ANON_KEY=TU_SUPABASE_ANON_KEY
+.\run_local.bat build-apk https://api.pagos-recurrentes.com
+```
+
+Endpoints de sync:
+
+- `GET /sync/status`: valida usuario, premium y conteos del servidor.
+- `POST /sync/bootstrap`: sube snapshot local completo de servicios y pagos.
+- `GET /sync/pull`: descarga snapshot servidor para el usuario autenticado.
 
 Pruebas de tienda recomendadas antes de publicar:
 

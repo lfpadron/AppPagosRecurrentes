@@ -27,6 +27,7 @@ class PaymentInstance(SQLModel, table=True):
     )
     cutoff_date: date | None = Field(default=None, nullable=True)
     due_date: date = Field(nullable=False, index=True)
+    currency: str = Field(default="MXN", sa_column=Column(String(3), nullable=False, index=True))
     estimated_amount: Decimal | None = Field(default=None, sa_column=Column(Numeric(12, 2), nullable=True))
     paid_amount: Decimal | None = Field(default=None, sa_column=Column(Numeric(12, 2), nullable=True))
     paid_at: date | None = Field(default=None, nullable=True)

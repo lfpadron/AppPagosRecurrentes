@@ -20,6 +20,7 @@ class PaymentInstanceRead(BaseModel):
     service_icon_key_snapshot: str
     cutoff_date: date | None
     due_date: date
+    currency: str
     estimated_amount: Decimal | None
     paid_amount: Decimal | None
     paid_at: date | None
@@ -43,6 +44,7 @@ class PaymentUpdate(BaseModel):
     due_date: date | None = None
     cutoff_date: date | None = None
     estimated_amount: Decimal | None = Field(default=None, ge=0)
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
     paid_amount: Decimal | None = Field(default=None, ge=0)
     paid_at: date | None = None
     payment_method: str | None = Field(default=None, max_length=50)

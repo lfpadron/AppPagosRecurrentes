@@ -198,6 +198,9 @@ class PaymentInstance {
   }
 
   PaymentInstance copyWith({
+    String? id,
+    String? userId,
+    String? serviceAccountId,
     PaymentStatus? status,
     double? paidAmount,
     DateTime? paidAt,
@@ -210,9 +213,9 @@ class PaymentInstance {
     bool clearPaid = false,
   }) {
     return PaymentInstance(
-      id: id,
-      userId: userId,
-      serviceAccountId: serviceAccountId,
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      serviceAccountId: serviceAccountId ?? this.serviceAccountId,
       paymentType: paymentType,
       status: status ?? this.status,
       objectName: objectName,

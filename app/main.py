@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, calendar, imports, payments, reports, services
+from app.api.routes import auth, calendar, imports, payments, reports, services, sync
 from app.core.config import settings
 
 
@@ -22,6 +22,7 @@ def create_app() -> FastAPI:
     app.include_router(reports.router)
     app.include_router(imports.router)
     app.include_router(auth.router)
+    app.include_router(sync.router)
 
     @app.get("/health", tags=["system"])
     def health() -> dict[str, str]:

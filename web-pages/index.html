@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Pagos Recurrentes: asistente para recordar y controlar pagos de servicios, colegiaturas, seguros y más." />
+  <title>Pagos Recurrentes | Splash</title>
+  <style>
+    :root{
+      --bg:#F2F2F2;
+      --ink:#0A0A0A;
+      --muted:#666666;
+      --blue:#0057FF;
+      --orange:#E66E14;
+      --white:#FFFFFF;
+      --font-heading: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-body: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-serif: Georgia, "Times New Roman", serif;
+    }
+
+    *{ box-sizing:border-box; }
+    html{ scroll-behavior:smooth; }
+    body{
+      margin:0;
+      min-height:100vh;
+      background:var(--bg);
+      color:var(--ink);
+      font-family:var(--font-body);
+      overflow-x:hidden;
+    }
+
+    .page{ min-height:100vh; background:var(--bg); color:var(--ink); }
+    .precision-rule{ position:absolute; left:0; right:0; height:1px; background:rgba(10,10,10,.10); }
+    .precision-rule.top{ top:0; }
+    .precision-rule.bottom{ bottom:0; }
+
+    .hero{
+      position:relative;
+      min-height:100vh;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      padding:5rem 6vw;
+      overflow:hidden;
+    }
+
+    .questions{
+      display:flex;
+      flex-direction:column;
+      gap:4rem;
+      width:100%;
+      max-width:72rem;
+    }
+
+    .question{
+      display:flex;
+      flex-direction:column;
+      opacity:0;
+      transform:translateY(40px);
+      animation:questionIn .8s ease-out forwards;
+      will-change:transform;
+    }
+    .question:nth-child(1){ align-self:flex-start; text-align:left; animation-delay:.30s; }
+    .question:nth-child(2){ align-self:center; text-align:right; animation-delay:.55s; }
+    .question:nth-child(3){ align-self:flex-start; text-align:left; margin-left:1rem; animation-delay:.80s; }
+
+    .question p{
+      margin:0;
+      max-width:48rem;
+      font-family:var(--font-serif);
+      font-size:clamp(2rem, 6vw, 4.5rem);
+      line-height:1.1;
+      font-style:italic;
+      color:var(--ink);
+      letter-spacing:-.03em;
+    }
+
+    @keyframes questionIn{
+      to{ opacity:1; transform:translateY(0); }
+    }
+
+    .solution{
+      position:relative;
+      background:var(--ink);
+      color:var(--white);
+      padding:6rem 6vw;
+      overflow:hidden;
+      isolation:isolate;
+    }
+    .solution-bg{
+      position:absolute;
+      inset:0;
+      opacity:.10;
+      z-index:-2;
+    }
+    .solution-bg img{
+      width:100%;
+      height:100%;
+      object-fit:cover;
+      display:block;
+    }
+    .solution::after{
+      content:"";
+      position:absolute;
+      inset:0;
+      background:radial-gradient(circle at 50% 20%, rgba(0,87,255,.14), transparent 38%), linear-gradient(180deg, rgba(10,10,10,.15), rgba(10,10,10,.55));
+      z-index:-1;
+      pointer-events:none;
+    }
+
+    .solution-inner{
+      position:relative;
+      z-index:1;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      text-align:center;
+      max-width:68rem;
+      margin:0 auto;
+    }
+
+    .app-title{
+      margin:0 0 4rem;
+      font-family:var(--font-heading);
+      font-size:clamp(3rem, 8vw, 6rem);
+      line-height:1;
+      font-weight:800;
+      letter-spacing:-.06em;
+      color:transparent;
+      -webkit-text-stroke:1.5px rgba(255,255,255,.72);
+      text-stroke:1.5px rgba(255,255,255,.72);
+      opacity:0;
+      transform:scale(.95);
+      animation:softScale .8s ease-out forwards;
+      animation-timeline:view();
+      animation-range:entry 10% cover 35%;
+    }
+
+    .blue-rule{
+      width:6rem;
+      height:1px;
+      background:var(--blue);
+      margin:0 0 4rem;
+    }
+
+    .description{
+      max-width:42rem;
+      margin:0;
+      font-size:clamp(1rem, 2vw, 1.25rem);
+      line-height:1.6;
+      color:rgba(255,255,255,.90);
+      opacity:0;
+      transform:translateY(30px);
+      animation:riseIn .7s ease-out .2s forwards;
+      animation-timeline:view();
+      animation-range:entry 10% cover 35%;
+    }
+    .description strong{ color:var(--blue); font-weight:700; }
+    .description em{ font-weight:700; }
+
+    .disclaimer{
+      margin-top:4rem;
+      border:1px solid rgba(255,255,255,.20);
+      border-radius:2px;
+      padding:1rem 1.5rem;
+      max-width:40rem;
+      opacity:0;
+      transform:translateY(20px);
+      animation:riseIn .6s ease-out .4s forwards;
+      animation-timeline:view();
+      animation-range:entry 10% cover 35%;
+    }
+    .disclaimer p{
+      margin:0;
+      color:rgba(255,255,255,.52);
+      font-size:.78rem;
+      line-height:1.5;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+    }
+
+    @keyframes softScale{ to{ opacity:1; transform:scale(1); } }
+    @keyframes riseIn{ to{ opacity:1; transform:translateY(0); } }
+
+    .footer{
+      background:var(--bg);
+      padding:3rem 6vw 4rem;
+    }
+    .footer-rule{
+      width:100%;
+      height:1px;
+      background:rgba(10,10,10,.10);
+      margin-bottom:2.5rem;
+    }
+    .footer-content{
+      display:flex;
+      align-items:center;
+      gap:2rem;
+    }
+    .mission{
+      margin:0;
+      flex:0 0 auto;
+      color:var(--muted);
+      font-size:.75rem;
+      letter-spacing:.1em;
+      text-transform:uppercase;
+      white-space:nowrap;
+    }
+    .logo-wrap{
+      flex:1;
+      display:flex;
+      justify-content:center;
+    }
+    .logo-wrap img{
+      height:3.5rem;
+      max-width:min(100%, 26rem);
+      object-fit:contain;
+      display:block;
+    }
+    .footer-spacer{ flex:0 0 180px; }
+
+    .cursor-star{
+      position:fixed;
+      width:32px;
+      height:32px;
+      pointer-events:none;
+      z-index:9999;
+      display:none;
+      transform:translate(-50%, -50%);
+      filter:drop-shadow(0 0 6px rgba(230,110,20,.35));
+      transition:left .08s ease-out, top .08s ease-out;
+    }
+    .trail-star{
+      position:fixed;
+      pointer-events:none;
+      z-index:9998;
+      width:18px;
+      height:18px;
+      opacity:.9;
+      transform:translate(-50%, -50%) scale(.35) rotate(0deg);
+      filter:drop-shadow(0 0 7px rgba(230,110,20,.42));
+      animation:starTrail .85s ease-out forwards;
+    }
+    @keyframes starTrail{
+      0%{ opacity:.95; transform:translate(-50%, -50%) scale(.35) rotate(0deg); }
+      100%{ opacity:0; transform:translate(-50%, calc(-50% - 18px)) scale(1.05) rotate(160deg); }
+    }
+
+    @media (min-width:768px){
+      .hero{ padding-left:8vw; padding-right:8vw; }
+      .solution{ padding:8rem 8vw; }
+      .footer{ padding-left:8vw; padding-right:8vw; }
+      .questions{ gap:6rem; }
+      .question:nth-child(3){ margin-left:4rem; }
+      .cursor-star{ display:block; }
+    }
+
+    @media (max-width:767px){
+      .hero{ min-height:92vh; padding-top:4rem; padding-bottom:4rem; }
+      .questions{ gap:3rem; }
+      .question:nth-child(2){ align-self:flex-end; }
+      .solution{ padding-top:5rem; padding-bottom:5rem; }
+      .app-title{ margin-bottom:3rem; }
+      .blue-rule{ margin-bottom:3rem; }
+      .footer-content{ flex-direction:column; justify-content:center; text-align:center; }
+      .footer-spacer{ display:none; }
+      .mission{ white-space:normal; }
+      .logo-wrap img{ height:3rem; }
+    }
+
+    @media (prefers-reduced-motion: reduce){
+      html{ scroll-behavior:auto; }
+      *, *::before, *::after{
+        animation-duration:.001ms !important;
+        animation-iteration-count:1 !important;
+        scroll-behavior:auto !important;
+        transition-duration:.001ms !important;
+      }
+      .cursor-star, .trail-star{ display:none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <svg id="cursorStar" class="cursor-star" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 0 C12.6 6, 14.4 8.4, 24 9 C14.4 9.6, 12.6 12, 12 24 C11.4 12, 9.6 9.6, 0 9 C9.6 8.4, 11.4 6, 12 0 Z" fill="#E66E14" />
+    </svg>
+
+    <main>
+      <section class="hero" aria-label="Preguntas frecuentes sobre pagos recurrentes">
+        <div class="precision-rule top"></div>
+        <div class="questions">
+          <div class="question" data-speed="0.3"><p>¿Te cortaron la luz porque se te olvidó pagarla a tiempo?</p></div>
+          <div class="question" data-speed="0.5"><p>¿Cuánto he pagado de servicios del departamento?</p></div>
+          <div class="question" data-speed="0.7"><p>¿Cuánto debo pagar de servicios y colegiaturas el próximo mes?</p></div>
+        </div>
+        <div class="precision-rule bottom"></div>
+      </section>
+
+      <section class="solution" aria-label="Presentación de Pagos Recurrentes">
+        <div class="solution-bg">
+          <img src="https://media.base44.com/images/public/6a498c433cf75524f9bb0ec5/c6b0d2402_generated_24b0691f.png" alt="Esfera abstracta de vidrio sobre concreto" />
+        </div>
+        <div class="solution-inner">
+          <h1 class="app-title">Pagos Recurrentes</h1>
+          <div class="blue-rule" aria-hidden="true"></div>
+          <p class="description">
+            Si estas y dudas similares no te dejan dormir,
+            <strong>“Pagos Recurrentes”</strong> es una app intuitiva y fácil de usar que te permite gestionar ágilmente y desde tu celular o computadora tus pagos de gobierno, de colegiaturas, de seguros, de servicios y similares para que tengas control perfecto de los mismos y nunca más te pase <em>“¡Se me olvidó pagar!”</em>.
+          </p>
+          <div class="disclaimer">
+            <p>NOTA: La app no gestiona los pagos, solo es un asistente que nunca olvida.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer" aria-label="Astrogato Labs">
+      <div class="footer-rule"></div>
+      <div class="footer-content">
+        <p class="mission">Una misión en progreso de:</p>
+        <div class="logo-wrap">
+          <img src="https://media.base44.com/images/public/user_69043ee0497ca0e62441bd8e/bb0660ebb_astrogato-textoderechacentrado.png" alt="Astrogato Labs" />
+        </div>
+        <div class="footer-spacer" aria-hidden="true"></div>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    (function(){
+      const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (reduce) return;
+
+      const cursor = document.getElementById('cursorStar');
+      const starPath = 'M12 0 C12.6 6, 14.4 8.4, 24 9 C14.4 9.6, 12.6 12, 12 24 C11.4 12, 9.6 9.6, 0 9 C9.6 8.4, 11.4 6, 12 0 Z';
+      let lastX = -9999;
+      let lastY = -9999;
+      let ticking = false;
+      let pendingX = 0;
+      let pendingY = 0;
+
+      function makeTrailStar(x, y){
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.classList.add('trail-star');
+        const size = 10 + Math.random() * 12;
+        svg.style.width = size + 'px';
+        svg.style.height = size + 'px';
+        svg.style.left = x + 'px';
+        svg.style.top = y + 'px';
+        svg.style.rotate = (Math.random() * 180) + 'deg';
+
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', starPath);
+        path.setAttribute('fill', '#E66E14');
+        svg.appendChild(path);
+        document.body.appendChild(svg);
+        window.setTimeout(() => svg.remove(), 900);
+      }
+
+      function update(){
+        ticking = false;
+        cursor.style.left = pendingX + 'px';
+        cursor.style.top = pendingY + 'px';
+        cursor.style.display = 'block';
+
+        const dx = pendingX - lastX;
+        const dy = pendingY - lastY;
+        if (Math.hypot(dx, dy) >= 16){
+          lastX = pendingX;
+          lastY = pendingY;
+          makeTrailStar(pendingX, pendingY);
+        }
+      }
+
+      window.addEventListener('mousemove', function(e){
+        pendingX = e.clientX;
+        pendingY = e.clientY;
+        if (!ticking){
+          ticking = true;
+          window.requestAnimationFrame(update);
+        }
+      }, { passive:true });
+
+      window.addEventListener('mouseout', function(){
+        cursor.style.display = 'none';
+      });
+
+      const questionBlocks = Array.from(document.querySelectorAll('.question'));
+      window.addEventListener('scroll', function(){
+        const y = window.scrollY || 0;
+        questionBlocks.forEach(function(el){
+          const speed = Number(el.dataset.speed || 0);
+          el.style.translate = '0 ' + (-120 * speed * Math.min(y, 800) / 800) + 'px';
+        });
+      }, { passive:true });
+    })();
+  </script>
+</body>
+</html>
