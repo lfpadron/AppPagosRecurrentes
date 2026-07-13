@@ -18,6 +18,8 @@ class LocalAppDatabase {
   static const _schemaVersionKey = 'local_app_database:schema_version';
   static const _deviceIdKey = 'local_app_database:device_id';
   static const _lastBootstrapAtKey = 'local_app_database:last_bootstrap_at';
+  static const _lastPullAtKey = 'local_app_database:last_pull_at';
+  static const _lastSyncAtKey = 'local_app_database:last_sync_at';
   static const _currentSchemaVersion = 3;
   static final _random = Random();
 
@@ -311,8 +313,17 @@ class LocalAppDatabase {
 
   Future<DateTime?> storedLastBootstrapAt() async {
     final preferences = await SharedPreferences.getInstance();
-    final raw = preferences.getString(_lastBootstrapAtKey);
-    return raw == null ? null : DateTime.tryParse(raw);
+    return _readDateTimePreference(preferences, _lastBootstrapAtKey);
+  }
+
+  Future<DateTime?> storedLastPullAt() async {
+    final preferences = await SharedPreferences.getInstance();
+    return _readDateTimePreference(preferences, _lastPullAtKey);
+  }
+
+  Future<DateTime?> storedLastSyncAt() async {
+    final preferences = await SharedPreferences.getInstance();
+    return _readDateTimePreference(preferences, _lastSyncAtKey);
   }
 
   Future<LocalSyncSnapshot> exportSyncSnapshot() async {
@@ -355,10 +366,94 @@ class LocalAppDatabase {
     await _writeServices(nextServices);
     await _writePayments(nextPayments);
     final preferences = await SharedPreferences.getInstance();
-    await preferences.setString(
-      _lastBootstrapAtKey,
-      DateTime.now().toUtc().toIso8601String(),
-    );
+    final now = DateTime.now().toUtc();
+    await _writeDateTimePreference(preferences, _lastBootstrapAtKey, now);
+    await _writeDateTimePreference(preferences, _lastSyncAtKey, now);
+  }
+
+  Future<LocalSyncApplyResult> applyServerSnapshot({
+    required List<Map<String, dynamic>> services,
+    required List<Map<String, dynamic>> payments,
+  }) async {
+    await ensureInitialized();
+    final preferences = await SharedPreferences.getInstance();
+    final lastSyncAt = _readDateTimePreference(preferences, _lastSyncAtKey);
+
+    final merge = LocalSyncApplyResultBuilder();
+    final localServices = await _readServices();
+    final serviceIndexes = {
+      for (var index = 0; index < localServices.length; index++)
+        localServices[index].id: index,
+    };
+
+    for (final item in services) {
+      final remote = ServiceAccount.fromJson(item);
+      final index = serviceIndexes[remote.id];
+      if (index == null) {
+        serviceIndexes[remote.id] = localServices.length;
+        localServices.add(remote);
+        merge.importedServices++;
+        continue;
+      }
+
+      final local = localServices[index];
+      final decision = _mergeDecision(
+        localModifiedAt: local.lastModifiedAt,
+        remoteModifiedAt: remote.lastModifiedAt,
+        lastSyncAt: lastSyncAt,
+      );
+      switch (decision) {
+        case _MergeDecision.applyRemote:
+          localServices[index] = remote;
+          merge.updatedServices++;
+        case _MergeDecision.keepLocal:
+          merge.keptLocalServices++;
+        case _MergeDecision.conflict:
+          merge.conflictCount++;
+          merge.keptLocalServices++;
+      }
+    }
+
+    final localPayments = await _readPayments();
+    final paymentIndexes = {
+      for (var index = 0; index < localPayments.length; index++)
+        localPayments[index].id: index,
+    };
+
+    for (final item in payments) {
+      final remote = PaymentInstance.fromJson(item);
+      final index = paymentIndexes[remote.id];
+      if (index == null) {
+        paymentIndexes[remote.id] = localPayments.length;
+        localPayments.add(remote);
+        merge.importedPayments++;
+        continue;
+      }
+
+      final local = localPayments[index];
+      final decision = _mergeDecision(
+        localModifiedAt: local.lastModifiedAt,
+        remoteModifiedAt: remote.lastModifiedAt,
+        lastSyncAt: lastSyncAt,
+      );
+      switch (decision) {
+        case _MergeDecision.applyRemote:
+          localPayments[index] = remote;
+          merge.updatedPayments++;
+        case _MergeDecision.keepLocal:
+          merge.keptLocalPayments++;
+        case _MergeDecision.conflict:
+          merge.conflictCount++;
+          merge.keptLocalPayments++;
+      }
+    }
+
+    await _writeServices(localServices);
+    await _writePayments(localPayments);
+    final now = DateTime.now().toUtc();
+    await _writeDateTimePreference(preferences, _lastPullAtKey, now);
+    await _writeDateTimePreference(preferences, _lastSyncAtKey, now);
+    return merge.build();
   }
 
   Future<ServiceAccount> _markServiceModified(ServiceAccount service) async {
@@ -521,6 +616,95 @@ class LocalAppDatabase {
       jsonEncode(payments.map((payment) => payment.toJson()).toList()),
     );
   }
+}
+
+class LocalSyncApplyResult {
+  const LocalSyncApplyResult({
+    required this.importedServices,
+    required this.updatedServices,
+    required this.keptLocalServices,
+    required this.importedPayments,
+    required this.updatedPayments,
+    required this.keptLocalPayments,
+    required this.conflictCount,
+  });
+
+  final int importedServices;
+  final int updatedServices;
+  final int keptLocalServices;
+  final int importedPayments;
+  final int updatedPayments;
+  final int keptLocalPayments;
+  final int conflictCount;
+}
+
+class LocalSyncApplyResultBuilder {
+  int importedServices = 0;
+  int updatedServices = 0;
+  int keptLocalServices = 0;
+  int importedPayments = 0;
+  int updatedPayments = 0;
+  int keptLocalPayments = 0;
+  int conflictCount = 0;
+
+  LocalSyncApplyResult build() => LocalSyncApplyResult(
+    importedServices: importedServices,
+    updatedServices: updatedServices,
+    keptLocalServices: keptLocalServices,
+    importedPayments: importedPayments,
+    updatedPayments: updatedPayments,
+    keptLocalPayments: keptLocalPayments,
+    conflictCount: conflictCount,
+  );
+}
+
+enum _MergeDecision { applyRemote, keepLocal, conflict }
+
+_MergeDecision _mergeDecision({
+  required DateTime? localModifiedAt,
+  required DateTime? remoteModifiedAt,
+  required DateTime? lastSyncAt,
+}) {
+  final local = _utcOrNull(localModifiedAt);
+  final remote = _utcOrNull(remoteModifiedAt);
+  final lastSync = _utcOrNull(lastSyncAt);
+
+  if (lastSync != null) {
+    final localChanged = _isAfter(local, lastSync);
+    final remoteChanged = _isAfter(remote, lastSync);
+    if (localChanged && remoteChanged && !_sameMoment(local, remote)) {
+      return _MergeDecision.conflict;
+    }
+  }
+
+  if (remote != null && (local == null || remote.isAfter(local))) {
+    return _MergeDecision.applyRemote;
+  }
+  return _MergeDecision.keepLocal;
+}
+
+DateTime? _readDateTimePreference(SharedPreferences preferences, String key) {
+  final raw = preferences.getString(key);
+  final parsed = raw == null ? null : DateTime.tryParse(raw);
+  return _utcOrNull(parsed);
+}
+
+Future<void> _writeDateTimePreference(
+  SharedPreferences preferences,
+  String key,
+  DateTime value,
+) {
+  return preferences.setString(key, value.toUtc().toIso8601String());
+}
+
+DateTime? _utcOrNull(DateTime? value) => value?.toUtc();
+
+bool _isAfter(DateTime? value, DateTime other) =>
+    value != null && value.isAfter(other);
+
+bool _sameMoment(DateTime? a, DateTime? b) {
+  if (a == null || b == null) return a == b;
+  return a.millisecondsSinceEpoch == b.millisecondsSinceEpoch;
 }
 
 class LocalSyncSnapshot {

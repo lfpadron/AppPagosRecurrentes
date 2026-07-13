@@ -20,9 +20,7 @@ class ApiClient {
     required this.userId,
     this.accessTokenProvider,
     http.Client? httpClient,
-  }) : baseUrl = baseUrl.endsWith('/')
-           ? baseUrl.substring(0, baseUrl.length - 1)
-           : baseUrl,
+  }) : baseUrl = _normalizeBaseUrl(baseUrl),
        _httpClient = httpClient ?? http.Client();
 
   final String baseUrl;
@@ -43,6 +41,12 @@ class ApiClient {
   }
 
   Uri _uri(String path, [Map<String, Object?> query = const {}]) {
+    if (baseUrl.isEmpty) {
+      throw ApiException(
+        'API_BASE_URL no esta configurada. Publica la web apuntando a '
+        'https://api.pagos-recurrentes.com.',
+      );
+    }
     final normalizedPath = path.startsWith('/') ? path : '/$path';
     final queryParameters = <String, String>{};
     for (final entry in query.entries) {
@@ -115,7 +119,23 @@ class ApiClient {
 
   dynamic _decode(http.Response response) {
     final statusCode = response.statusCode;
-    final body = response.body.isEmpty ? null : jsonDecode(response.body);
+    final rawBody = response.body.trimLeft();
+    dynamic body;
+    try {
+      body = rawBody.isEmpty ? null : jsonDecode(rawBody);
+    } on FormatException {
+      final requestUrl = response.request?.url.toString() ?? 'URL desconocida';
+      final looksLikeHtml =
+          rawBody.startsWith('<!DOCTYPE') || rawBody.startsWith('<html');
+      throw ApiException(
+        looksLikeHtml
+            ? 'La API devolvio HTML en vez de JSON. Revisa que el build web '
+                  'use API_BASE_URL=https://api.pagos-recurrentes.com. '
+                  'URL llamada: $requestUrl'
+            : 'La API devolvio una respuesta no JSON. URL llamada: $requestUrl',
+        statusCode: statusCode,
+      );
+    }
     if (statusCode >= 200 && statusCode < 300) {
       return body;
     }
@@ -126,4 +146,11 @@ class ApiClient {
       statusCode: statusCode,
     );
   }
+}
+
+String _normalizeBaseUrl(String value) {
+  final trimmed = value.trim();
+  return trimmed.endsWith('/')
+      ? trimmed.substring(0, trimmed.length - 1)
+      : trimmed;
 }

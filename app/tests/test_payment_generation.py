@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -15,8 +15,9 @@ from app.models.payment_instance import PaymentInstance
 from app.models.service_account import ServiceAccount
 from app.models.service_exception import ServiceException
 from app.api.routes.calendar import get_calendar
-from app.api.routes.payments import list_payments
+from app.api.routes.payments import list_payments, update_payment
 from app.api.routes.reports import estimated_summary, paid_summary
+from app.schemas.payments import PaymentUpdate
 from app.services.payment_generation import generate_payments_for_service
 from app.services.payments import (
     cancel_payment,
@@ -269,6 +270,36 @@ def test_unmark_paid_restores_open_status(session: Session) -> None:
     assert payment.status != PaymentStatus.paid
     assert payment.paid_at is None
     assert payment.paid_amount is None
+
+
+def test_patch_payment_marks_server_modified_for_sync(session: Session) -> None:
+    payment = create_one_time_payment(
+        session,
+        user_id=USER_ID,
+        object_name="Casa",
+        service_name="Extra",
+        provider_name="Proveedor",
+        due_date=date.today(),
+        estimated_amount=Decimal("50.00"),
+    )
+    previous_modified_at = datetime(2026, 1, 1)
+    payment.last_modified_at = previous_modified_at
+    payment.last_modified_platform = "android"
+    payment.last_modified_device_id = "device-android"
+    session.add(payment)
+    session.commit()
+
+    updated = update_payment(
+        payment.id,
+        PaymentUpdate(notes="Editado en web"),
+        session=session,
+        user_id=USER_ID,
+    )
+
+    assert updated.notes == "Editado en web"
+    assert updated.last_modified_at > previous_modified_at
+    assert updated.last_modified_platform == "server"
+    assert updated.last_modified_device_id is None
 
 
 def test_cancelled_payments_are_hidden_from_search_and_calendar(session: Session) -> None:

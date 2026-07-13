@@ -43,7 +43,9 @@ if (-not (Test-Path $BuildDir)) {
 }
 
 Write-Host ""
-Write-Host "[2/3] Subiendo build a ${User}@${HostName}:$RemotePath..."
+Write-Host "[2/3] Preparando directorio remoto y subiendo build a ${User}@${HostName}:$RemotePath..."
+$RemotePrepCommand = "case '$RemotePath' in /var/www/*) mkdir -p '$RemotePath' && find '$RemotePath' -mindepth 1 -maxdepth 1 -exec rm -rf {} \; ;; *) echo 'RemotePath no permitido: $RemotePath' >&2; exit 1 ;; esac"
+ssh -i $SshKey "${User}@${HostName}" $RemotePrepCommand
 scp -i $SshKey -r "$BuildDir\." "${User}@${HostName}:$RemotePath/"
 
 Write-Host ""

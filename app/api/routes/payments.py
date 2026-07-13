@@ -160,7 +160,11 @@ def update_payment(
 
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(payment, field, value)
-    payment.updated_at = utc_now()
+    now = utc_now()
+    payment.updated_at = now
+    payment.last_modified_at = now
+    payment.last_modified_platform = "server"
+    payment.last_modified_device_id = None
     session.add(payment)
     session.commit()
     session.refresh(payment)

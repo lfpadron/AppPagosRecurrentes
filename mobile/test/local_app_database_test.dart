@@ -70,4 +70,83 @@ void main() {
     expect(remappedPayment.userId, '33333333-3333-4333-8333-333333333333');
     expect(await database.storedLastBootstrapAt(), isNotNull);
   });
+
+  test('server snapshot updates local records when server is newer', () async {
+    SharedPreferences.setMockInitialValues({});
+    final database = LocalAppDatabase(userId: 'local-user');
+    final servicesApi = ServicesApi.local(database);
+    final paymentsApi = PaymentsApi.local(database);
+
+    final service = (await servicesApi.listServices(limit: 1)).first;
+    final payment = (await paymentsApi.listPayments(limit: 1)).first;
+    await database.applyServerIdMappings(
+      serviceIdMap: const {},
+      paymentIdMap: const {},
+    );
+
+    final remoteModifiedAt = DateTime.now()
+        .toUtc()
+        .add(const Duration(minutes: 1))
+        .toIso8601String();
+    final remoteService = Map<String, dynamic>.from(service.toJson())
+      ..['provider_name'] = 'proveedor web'
+      ..['last_modified_at'] = remoteModifiedAt
+      ..['last_modified_platform'] = 'server';
+    final remotePayment = Map<String, dynamic>.from(payment.toJson())
+      ..['status'] = 'paid'
+      ..['paid_amount'] = 900.0
+      ..['paid_at'] = '2026-02-28'
+      ..['last_modified_at'] = remoteModifiedAt
+      ..['last_modified_platform'] = 'server';
+
+    final result = await database.applyServerSnapshot(
+      services: [remoteService],
+      payments: [remotePayment],
+    );
+
+    final updatedService = (await servicesApi.listServices(limit: 1)).first;
+    final updatedPayment = await database.getPayment(payment.id);
+
+    expect(result.updatedServices, 1);
+    expect(result.updatedPayments, 1);
+    expect(result.conflictCount, 0);
+    expect(updatedService.providerName, 'proveedor web');
+    expect(updatedPayment.status, PaymentStatus.paid);
+    expect(updatedPayment.paidAt, DateTime(2026, 2, 28));
+    expect(await database.storedLastPullAt(), isNotNull);
+    expect(await database.storedLastSyncAt(), isNotNull);
+  });
+
+  test('server snapshot keeps local records when local is newer', () async {
+    SharedPreferences.setMockInitialValues({});
+    final database = LocalAppDatabase(userId: 'local-user');
+    final paymentsApi = PaymentsApi.local(database);
+
+    final payment = (await paymentsApi.listPayments(limit: 1)).first;
+    await database.applyServerIdMappings(
+      serviceIdMap: const {},
+      paymentIdMap: const {},
+    );
+    final olderRemotePayment = Map<String, dynamic>.from(payment.toJson())
+      ..['status'] = 'future'
+      ..['last_modified_at'] = DateTime(2026, 1, 1).toUtc().toIso8601String()
+      ..['last_modified_platform'] = 'server';
+
+    final paid = await paymentsApi.markPaid(
+      payment.id,
+      paidAmount: 123,
+      paidAt: DateTime(2026, 3, 1),
+    );
+    final result = await database.applyServerSnapshot(
+      services: const [],
+      payments: [olderRemotePayment],
+    );
+    final afterPull = await database.getPayment(payment.id);
+
+    expect(paid.status, PaymentStatus.paid);
+    expect(result.updatedPayments, 0);
+    expect(result.keptLocalPayments, 1);
+    expect(afterPull.status, PaymentStatus.paid);
+    expect(afterPull.paidAmount, 123);
+  });
 }

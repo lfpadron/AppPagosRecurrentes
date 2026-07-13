@@ -493,6 +493,18 @@ class _SyncPrepCardState extends State<_SyncPrepCard> {
                     'Ultimo bootstrap: ${snapshot.data == null ? '-' : formatDateTime(snapshot.data!)}',
                   ),
                 ),
+                FutureBuilder<DateTime?>(
+                  future: widget.localDatabase.storedLastPullAt(),
+                  builder: (context, snapshot) => Text(
+                    'Ultima descarga: ${snapshot.data == null ? '-' : formatDateTime(snapshot.data!)}',
+                  ),
+                ),
+                FutureBuilder<DateTime?>(
+                  future: widget.localDatabase.storedLastSyncAt(),
+                  builder: (context, snapshot) => Text(
+                    'Ultimo sync: ${snapshot.data == null ? '-' : formatDateTime(snapshot.data!)}',
+                  ),
+                ),
                 const SizedBox(height: 12),
                 if (!AppConfig.supabaseAuthEnabled)
                   const Text(
@@ -519,6 +531,15 @@ class _SyncPrepCardState extends State<_SyncPrepCard> {
                         icon: const Icon(Icons.cloud_upload_outlined),
                         label: Text(
                           _syncing ? 'Sincronizando...' : 'Subir datos locales',
+                        ),
+                      ),
+                      FilledButton.tonalIcon(
+                        onPressed: _syncing ? null : _pullRemote,
+                        icon: const Icon(Icons.cloud_download_outlined),
+                        label: Text(
+                          _syncing
+                              ? 'Sincronizando...'
+                              : 'Descargar cambios',
                         ),
                       ),
                       OutlinedButton.icon(
@@ -563,7 +584,7 @@ class _SyncPrepCardState extends State<_SyncPrepCard> {
       await AuthSessionController.instance.sendOtp(email);
       setState(() => _message = 'Codigo enviado. Revisa tu correo.');
     } catch (error) {
-      setState(() => _error = error.toString());
+      setState(() => _error = formatAuthError(error));
     } finally {
       if (mounted) setState(() => _sendingOtp = false);
     }
@@ -585,7 +606,7 @@ class _SyncPrepCardState extends State<_SyncPrepCard> {
       await AuthSessionController.instance.verifyOtp(email, otp);
       setState(() => _message = 'Sesion validada.');
     } catch (error) {
-      setState(() => _error = error.toString());
+      setState(() => _error = formatAuthError(error));
     } finally {
       if (mounted) setState(() => _validatingOtp = false);
     }
@@ -610,6 +631,36 @@ class _SyncPrepCardState extends State<_SyncPrepCard> {
             '${result.updatedServices} actualizados. Pagos: '
             '${result.importedPayments} nuevos, ${result.updatedPayments} actualizados, '
             '${result.skippedPayments} omitidos. Conflictos: ${result.conflictCount}.';
+      });
+    } catch (error) {
+      setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  Future<void> _pullRemote() async {
+    setState(() {
+      _syncing = true;
+      _error = null;
+      _message = null;
+    });
+    try {
+      final status = await widget.syncApi.status();
+      if (!status.isPremium) {
+        setState(() => _error = 'La sincronizacion requiere plan Premium.');
+        return;
+      }
+      final result = await widget.syncApi.pullFromServer();
+      setState(() {
+        _message =
+            'Descarga lista. Servicios: ${result.importedServices} nuevos, '
+            '${result.updatedServices} actualizados, '
+            '${result.keptLocalServices} conservados en celular. Pagos: '
+            '${result.importedPayments} nuevos, '
+            '${result.updatedPayments} actualizados, '
+            '${result.keptLocalPayments} conservados en celular. '
+            'Conflictos: ${result.conflictCount}.';
       });
     } catch (error) {
       setState(() => _error = error.toString());

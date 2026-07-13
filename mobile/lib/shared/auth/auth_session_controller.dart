@@ -75,8 +75,8 @@ class AuthSessionController extends ChangeNotifier {
   Future<void> initialize() async {
     if (_initialized || !isConfigured) return;
     await Supabase.initialize(
-      url: AppConfig.supabaseUrl,
-      publishableKey: AppConfig.supabaseAnonKey,
+      url: AppConfig.normalizedSupabaseUrl,
+      publishableKey: AppConfig.normalizedSupabaseAnonKey,
     );
     _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((
       _,
@@ -93,7 +93,6 @@ class AuthSessionController extends ChangeNotifier {
     _requireConfigured();
     await Supabase.instance.client.auth.signInWithOtp(
       email: email.trim().toLowerCase(),
-      emailRedirectTo: kIsWeb ? null : 'io.supabase.flutter://signin-callback/',
     );
   }
 
@@ -158,4 +157,23 @@ class AuthSessionController extends ChangeNotifier {
       throw StateError('Supabase Auth no esta configurado.');
     }
   }
+}
+
+String formatAuthError(Object error) {
+  final message = error.toString();
+  if (message.contains('Error sending magic link email')) {
+    return 'Supabase no pudo enviar el correo OTP. Revisa la plantilla "Magic link or OTP" y la configuracion SMTP/correo del proyecto.';
+  }
+  if (message.contains('not a valid link-local address') ||
+      message.contains('%20')) {
+    return 'La URL de Supabase parece tener espacios o caracteres invalidos. Reconstruye la app con SUPABASE_URL sin espacios.';
+  }
+  if (message.contains('Email rate limit exceeded') ||
+      message.contains('over_email_send_rate_limit')) {
+    return 'Supabase limito el envio de correos. Espera un minuto e intenta de nuevo.';
+  }
+  return message
+      .replaceFirst('AuthRetryableFetchException(message: ', '')
+      .replaceFirst('AuthApiException(message: ', '')
+      .replaceFirst('Exception: ', '');
 }

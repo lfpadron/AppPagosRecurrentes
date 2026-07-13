@@ -44,4 +44,25 @@ void main() {
     expect(onlineData.first['id'], 'payment-1');
     expect(cachedData.first['service_name'], 'Internet');
   });
+
+  test('HTML API responses are reported as API configuration errors', () async {
+    final apiClient = ApiClient(
+      baseUrl: 'https://app.pagos-recurrentes.com',
+      userId: 'user-1',
+      httpClient: MockClient(
+        (_) async => http.Response('<!DOCTYPE html><html></html>', 200),
+      ),
+    );
+
+    expect(
+      () => apiClient.getJson('/payments'),
+      throwsA(
+        isA<ApiException>().having(
+          (error) => error.message,
+          'message',
+          contains('API_BASE_URL=https://api.pagos-recurrentes.com'),
+        ),
+      ),
+    );
+  });
 }

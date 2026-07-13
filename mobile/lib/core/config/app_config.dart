@@ -24,8 +24,12 @@ class AppConfig {
     defaultValue: '',
   );
 
+  static String get normalizedSupabaseUrl => supabaseUrl.trim();
+
+  static String get normalizedSupabaseAnonKey => supabaseAnonKey.trim();
+
   static bool get forceLocalData => dataMode.toLowerCase() == 'local';
 
   static bool get supabaseAuthEnabled =>
-      supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
+      normalizedSupabaseUrl.isNotEmpty && normalizedSupabaseAnonKey.isNotEmpty;
 }

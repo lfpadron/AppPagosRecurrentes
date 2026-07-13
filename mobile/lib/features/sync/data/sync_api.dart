@@ -36,6 +36,14 @@ class SyncApi {
     );
     return result;
   }
+
+  Future<LocalSyncApplyResult> pullFromServer() async {
+    final data = await _apiClient.getJson('/sync/pull') as Map<String, dynamic>;
+    return _localDatabase.applyServerSnapshot(
+      services: _jsonMapList(data['services']),
+      payments: _jsonMapList(data['payments']),
+    );
+  }
 }
 
 class SyncStatus {
@@ -105,4 +113,12 @@ class SyncBootstrapResult {
 Map<String, String> _stringMap(Object? value) {
   if (value is! Map<String, dynamic>) return const {};
   return value.map((key, item) => MapEntry(key, item.toString()));
+}
+
+List<Map<String, dynamic>> _jsonMapList(Object? value) {
+  if (value is! List<dynamic>) return const [];
+  return value
+      .whereType<Map>()
+      .map((item) => Map<String, dynamic>.from(item))
+      .toList();
 }

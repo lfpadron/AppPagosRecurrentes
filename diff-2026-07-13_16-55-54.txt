@@ -1,0 +1,711 @@
+diff --git a/app/api/routes/payments.py b/app/api/routes/payments.py
+index 0dcd3a7..399c732 100644
+--- a/app/api/routes/payments.py
++++ b/app/api/routes/payments.py
+@@ -160,7 +160,11 @@ def update_payment(
+ 
+     for field, value in payload.model_dump(exclude_unset=True).items():
+         setattr(payment, field, value)
+-    payment.updated_at = utc_now()
++    now = utc_now()
++    payment.updated_at = now
++    payment.last_modified_at = now
++    payment.last_modified_platform = "server"
++    payment.last_modified_device_id = None
+     session.add(payment)
+     session.commit()
+     session.refresh(payment)
+diff --git a/app/tests/test_payment_generation.py b/app/tests/test_payment_generation.py
+index 6bd325e..c882204 100644
+--- a/app/tests/test_payment_generation.py
++++ b/app/tests/test_payment_generation.py
+@@ -1,4 +1,4 @@
+-from datetime import date
++from datetime import date, datetime
+ from decimal import Decimal
+ from uuid import UUID
+ 
+@@ -15,8 +15,9 @@ from app.models.payment_instance import PaymentInstance
+ from app.models.service_account import ServiceAccount
+ from app.models.service_exception import ServiceException
+ from app.api.routes.calendar import get_calendar
+-from app.api.routes.payments import list_payments
++from app.api.routes.payments import list_payments, update_payment
+ from app.api.routes.reports import estimated_summary, paid_summary
++from app.schemas.payments import PaymentUpdate
+ from app.services.payment_generation import generate_payments_for_service
+ from app.services.payments import (
+     cancel_payment,
+@@ -271,6 +272,36 @@ def test_unmark_paid_restores_open_status(session: Session) -> None:
+     assert payment.paid_amount is None
+ 
+ 
++def test_patch_payment_marks_server_modified_for_sync(session: Session) -> None:
++    payment = create_one_time_payment(
++        session,
++        user_id=USER_ID,
++        object_name="Casa",
++        service_name="Extra",
++        provider_name="Proveedor",
++        due_date=date.today(),
++        estimated_amount=Decimal("50.00"),
++    )
++    previous_modified_at = datetime(2026, 1, 1)
++    payment.last_modified_at = previous_modified_at
++    payment.last_modified_platform = "android"
++    payment.last_modified_device_id = "device-android"
++    session.add(payment)
++    session.commit()
++
++    updated = update_payment(
++        payment.id,
++        PaymentUpdate(notes="Editado en web"),
++        session=session,
++        user_id=USER_ID,
++    )
++
++    assert updated.notes == "Editado en web"
++    assert updated.last_modified_at > previous_modified_at
++    assert updated.last_modified_platform == "server"
++    assert updated.last_modified_device_id is None
++
++
+ def test_cancelled_payments_are_hidden_from_search_and_calendar(session: Session) -> None:
+     payment = create_one_time_payment(
+         session,
+diff --git a/deploy/deploy_web.ps1 b/deploy/deploy_web.ps1
+index e2980f4..d365813 100644
+--- a/deploy/deploy_web.ps1
++++ b/deploy/deploy_web.ps1
+@@ -43,7 +43,9 @@ if (-not (Test-Path $BuildDir)) {
+ }
+ 
+ Write-Host ""
+-Write-Host "[2/3] Subiendo build a ${User}@${HostName}:$RemotePath..."
++Write-Host "[2/3] Preparando directorio remoto y subiendo build a ${User}@${HostName}:$RemotePath..."
++$RemotePrepCommand = "case '$RemotePath' in /var/www/*) mkdir -p '$RemotePath' && find '$RemotePath' -mindepth 1 -maxdepth 1 -exec rm -rf {} \; ;; *) echo 'RemotePath no permitido: $RemotePath' >&2; exit 1 ;; esac"
++ssh -i $SshKey "${User}@${HostName}" $RemotePrepCommand
+ scp -i $SshKey -r "$BuildDir\." "${User}@${HostName}:$RemotePath/"
+ 
+ Write-Host ""
+diff --git a/mobile/lib/core/config/app_config.dart b/mobile/lib/core/config/app_config.dart
+index 2b3d08f..7461d04 100644
+--- a/mobile/lib/core/config/app_config.dart
++++ b/mobile/lib/core/config/app_config.dart
+@@ -24,8 +24,12 @@ class AppConfig {
+     defaultValue: '',
+   );
+ 
++  static String get normalizedSupabaseUrl => supabaseUrl.trim();
++
++  static String get normalizedSupabaseAnonKey => supabaseAnonKey.trim();
++
+   static bool get forceLocalData => dataMode.toLowerCase() == 'local';
+ 
+   static bool get supabaseAuthEnabled =>
+-      supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
++      normalizedSupabaseUrl.isNotEmpty && normalizedSupabaseAnonKey.isNotEmpty;
+ }
+diff --git a/mobile/lib/core/network/api_client.dart b/mobile/lib/core/network/api_client.dart
+index 50d9b00..098db46 100644
+--- a/mobile/lib/core/network/api_client.dart
++++ b/mobile/lib/core/network/api_client.dart
+@@ -20,9 +20,7 @@ class ApiClient {
+     required this.userId,
+     this.accessTokenProvider,
+     http.Client? httpClient,
+-  }) : baseUrl = baseUrl.endsWith('/')
+-           ? baseUrl.substring(0, baseUrl.length - 1)
+-           : baseUrl,
++  }) : baseUrl = _normalizeBaseUrl(baseUrl),
+        _httpClient = httpClient ?? http.Client();
+ 
+   final String baseUrl;
+@@ -43,6 +41,12 @@ class ApiClient {
+   }
+ 
+   Uri _uri(String path, [Map<String, Object?> query = const {}]) {
++    if (baseUrl.isEmpty) {
++      throw ApiException(
++        'API_BASE_URL no esta configurada. Publica la web apuntando a '
++        'https://api.pagos-recurrentes.com.',
++      );
++    }
+     final normalizedPath = path.startsWith('/') ? path : '/$path';
+     final queryParameters = <String, String>{};
+     for (final entry in query.entries) {
+@@ -115,7 +119,23 @@ class ApiClient {
+ 
+   dynamic _decode(http.Response response) {
+     final statusCode = response.statusCode;
+-    final body = response.body.isEmpty ? null : jsonDecode(response.body);
++    final rawBody = response.body.trimLeft();
++    dynamic body;
++    try {
++      body = rawBody.isEmpty ? null : jsonDecode(rawBody);
++    } on FormatException {
++      final requestUrl = response.request?.url.toString() ?? 'URL desconocida';
++      final looksLikeHtml =
++          rawBody.startsWith('<!DOCTYPE') || rawBody.startsWith('<html');
++      throw ApiException(
++        looksLikeHtml
++            ? 'La API devolvio HTML en vez de JSON. Revisa que el build web '
++                  'use API_BASE_URL=https://api.pagos-recurrentes.com. '
++                  'URL llamada: $requestUrl'
++            : 'La API devolvio una respuesta no JSON. URL llamada: $requestUrl',
++        statusCode: statusCode,
++      );
++    }
+     if (statusCode >= 200 && statusCode < 300) {
+       return body;
+     }
+@@ -127,3 +147,10 @@ class ApiClient {
+     );
+   }
+ }
++
++String _normalizeBaseUrl(String value) {
++  final trimmed = value.trim();
++  return trimmed.endsWith('/')
++      ? trimmed.substring(0, trimmed.length - 1)
++      : trimmed;
++}
+diff --git a/mobile/lib/core/storage/local_app_database.dart b/mobile/lib/core/storage/local_app_database.dart
+index 37d9b42..242fac4 100644
+--- a/mobile/lib/core/storage/local_app_database.dart
++++ b/mobile/lib/core/storage/local_app_database.dart
+@@ -18,6 +18,8 @@ class LocalAppDatabase {
+   static const _schemaVersionKey = 'local_app_database:schema_version';
+   static const _deviceIdKey = 'local_app_database:device_id';
+   static const _lastBootstrapAtKey = 'local_app_database:last_bootstrap_at';
++  static const _lastPullAtKey = 'local_app_database:last_pull_at';
++  static const _lastSyncAtKey = 'local_app_database:last_sync_at';
+   static const _currentSchemaVersion = 3;
+   static final _random = Random();
+ 
+@@ -311,8 +313,17 @@ class LocalAppDatabase {
+ 
+   Future<DateTime?> storedLastBootstrapAt() async {
+     final preferences = await SharedPreferences.getInstance();
+-    final raw = preferences.getString(_lastBootstrapAtKey);
+-    return raw == null ? null : DateTime.tryParse(raw);
++    return _readDateTimePreference(preferences, _lastBootstrapAtKey);
++  }
++
++  Future<DateTime?> storedLastPullAt() async {
++    final preferences = await SharedPreferences.getInstance();
++    return _readDateTimePreference(preferences, _lastPullAtKey);
++  }
++
++  Future<DateTime?> storedLastSyncAt() async {
++    final preferences = await SharedPreferences.getInstance();
++    return _readDateTimePreference(preferences, _lastSyncAtKey);
+   }
+ 
+   Future<LocalSyncSnapshot> exportSyncSnapshot() async {
+@@ -355,10 +366,94 @@ class LocalAppDatabase {
+     await _writeServices(nextServices);
+     await _writePayments(nextPayments);
+     final preferences = await SharedPreferences.getInstance();
+-    await preferences.setString(
+-      _lastBootstrapAtKey,
+-      DateTime.now().toUtc().toIso8601String(),
+-    );
++    final now = DateTime.now().toUtc();
++    await _writeDateTimePreference(preferences, _lastBootstrapAtKey, now);
++    await _writeDateTimePreference(preferences, _lastSyncAtKey, now);
++  }
++
++  Future<LocalSyncApplyResult> applyServerSnapshot({
++    required List<Map<String, dynamic>> services,
++    required List<Map<String, dynamic>> payments,
++  }) async {
++    await ensureInitialized();
++    final preferences = await SharedPreferences.getInstance();
++    final lastSyncAt = _readDateTimePreference(preferences, _lastSyncAtKey);
++
++    final merge = LocalSyncApplyResultBuilder();
++    final localServices = await _readServices();
++    final serviceIndexes = {
++      for (var index = 0; index < localServices.length; index++)
++        localServices[index].id: index,
++    };
++
++    for (final item in services) {
++      final remote = ServiceAccount.fromJson(item);
++      final index = serviceIndexes[remote.id];
++      if (index == null) {
++        serviceIndexes[remote.id] = localServices.length;
++        localServices.add(remote);
++        merge.importedServices++;
++        continue;
++      }
++
++      final local = localServices[index];
++      final decision = _mergeDecision(
++        localModifiedAt: local.lastModifiedAt,
++        remoteModifiedAt: remote.lastModifiedAt,
++        lastSyncAt: lastSyncAt,
++      );
++      switch (decision) {
++        case _MergeDecision.applyRemote:
++          localServices[index] = remote;
++          merge.updatedServices++;
++        case _MergeDecision.keepLocal:
++          merge.keptLocalServices++;
++        case _MergeDecision.conflict:
++          merge.conflictCount++;
++          merge.keptLocalServices++;
++      }
++    }
++
++    final localPayments = await _readPayments();
++    final paymentIndexes = {
++      for (var index = 0; index < localPayments.length; index++)
++        localPayments[index].id: index,
++    };
++
++    for (final item in payments) {
++      final remote = PaymentInstance.fromJson(item);
++      final index = paymentIndexes[remote.id];
++      if (index == null) {
++        paymentIndexes[remote.id] = localPayments.length;
++        localPayments.add(remote);
++        merge.importedPayments++;
++        continue;
++      }
++
++      final local = localPayments[index];
++      final decision = _mergeDecision(
++        localModifiedAt: local.lastModifiedAt,
++        remoteModifiedAt: remote.lastModifiedAt,
++        lastSyncAt: lastSyncAt,
++      );
++      switch (decision) {
++        case _MergeDecision.applyRemote:
++          localPayments[index] = remote;
++          merge.updatedPayments++;
++        case _MergeDecision.keepLocal:
++          merge.keptLocalPayments++;
++        case _MergeDecision.conflict:
++          merge.conflictCount++;
++          merge.keptLocalPayments++;
++      }
++    }
++
++    await _writeServices(localServices);
++    await _writePayments(localPayments);
++    final now = DateTime.now().toUtc();
++    await _writeDateTimePreference(preferences, _lastPullAtKey, now);
++    await _writeDateTimePreference(preferences, _lastSyncAtKey, now);
++    return merge.build();
+   }
+ 
+   Future<ServiceAccount> _markServiceModified(ServiceAccount service) async {
+@@ -523,6 +618,95 @@ class LocalAppDatabase {
+   }
+ }
+ 
++class LocalSyncApplyResult {
++  const LocalSyncApplyResult({
++    required this.importedServices,
++    required this.updatedServices,
++    required this.keptLocalServices,
++    required this.importedPayments,
++    required this.updatedPayments,
++    required this.keptLocalPayments,
++    required this.conflictCount,
++  });
++
++  final int importedServices;
++  final int updatedServices;
++  final int keptLocalServices;
++  final int importedPayments;
++  final int updatedPayments;
++  final int keptLocalPayments;
++  final int conflictCount;
++}
++
++class LocalSyncApplyResultBuilder {
++  int importedServices = 0;
++  int updatedServices = 0;
++  int keptLocalServices = 0;
++  int importedPayments = 0;
++  int updatedPayments = 0;
++  int keptLocalPayments = 0;
++  int conflictCount = 0;
++
++  LocalSyncApplyResult build() => LocalSyncApplyResult(
++    importedServices: importedServices,
++    updatedServices: updatedServices,
++    keptLocalServices: keptLocalServices,
++    importedPayments: importedPayments,
++    updatedPayments: updatedPayments,
++    keptLocalPayments: keptLocalPayments,
++    conflictCount: conflictCount,
++  );
++}
++
++enum _MergeDecision { applyRemote, keepLocal, conflict }
++
++_MergeDecision _mergeDecision({
++  required DateTime? localModifiedAt,
++  required DateTime? remoteModifiedAt,
++  required DateTime? lastSyncAt,
++}) {
++  final local = _utcOrNull(localModifiedAt);
++  final remote = _utcOrNull(remoteModifiedAt);
++  final lastSync = _utcOrNull(lastSyncAt);
++
++  if (lastSync != null) {
++    final localChanged = _isAfter(local, lastSync);
++    final remoteChanged = _isAfter(remote, lastSync);
++    if (localChanged && remoteChanged && !_sameMoment(local, remote)) {
++      return _MergeDecision.conflict;
++    }
++  }
++
++  if (remote != null && (local == null || remote.isAfter(local))) {
++    return _MergeDecision.applyRemote;
++  }
++  return _MergeDecision.keepLocal;
++}
++
++DateTime? _readDateTimePreference(SharedPreferences preferences, String key) {
++  final raw = preferences.getString(key);
++  final parsed = raw == null ? null : DateTime.tryParse(raw);
++  return _utcOrNull(parsed);
++}
++
++Future<void> _writeDateTimePreference(
++  SharedPreferences preferences,
++  String key,
++  DateTime value,
++) {
++  return preferences.setString(key, value.toUtc().toIso8601String());
++}
++
++DateTime? _utcOrNull(DateTime? value) => value?.toUtc();
++
++bool _isAfter(DateTime? value, DateTime other) =>
++    value != null && value.isAfter(other);
++
++bool _sameMoment(DateTime? a, DateTime? b) {
++  if (a == null || b == null) return a == b;
++  return a.millisecondsSinceEpoch == b.millisecondsSinceEpoch;
++}
++
+ class LocalSyncSnapshot {
+   const LocalSyncSnapshot({
+     required this.deviceId,
+diff --git a/mobile/lib/features/settings/presentation/settings_page.dart b/mobile/lib/features/settings/presentation/settings_page.dart
+index 681eba1..918d8ee 100644
+--- a/mobile/lib/features/settings/presentation/settings_page.dart
++++ b/mobile/lib/features/settings/presentation/settings_page.dart
+@@ -493,6 +493,18 @@ class _SyncPrepCardState extends State<_SyncPrepCard> {
+                     'Ultimo bootstrap: ${snapshot.data == null ? '-' : formatDateTime(snapshot.data!)}',
+                   ),
+                 ),
++                FutureBuilder<DateTime?>(
++                  future: widget.localDatabase.storedLastPullAt(),
++                  builder: (context, snapshot) => Text(
++                    'Ultima descarga: ${snapshot.data == null ? '-' : formatDateTime(snapshot.data!)}',
++                  ),
++                ),
++                FutureBuilder<DateTime?>(
++                  future: widget.localDatabase.storedLastSyncAt(),
++                  builder: (context, snapshot) => Text(
++                    'Ultimo sync: ${snapshot.data == null ? '-' : formatDateTime(snapshot.data!)}',
++                  ),
++                ),
+                 const SizedBox(height: 12),
+                 if (!AppConfig.supabaseAuthEnabled)
+                   const Text(
+@@ -521,6 +533,15 @@ class _SyncPrepCardState extends State<_SyncPrepCard> {
+                           _syncing ? 'Sincronizando...' : 'Subir datos locales',
+                         ),
+                       ),
++                      FilledButton.tonalIcon(
++                        onPressed: _syncing ? null : _pullRemote,
++                        icon: const Icon(Icons.cloud_download_outlined),
++                        label: Text(
++                          _syncing
++                              ? 'Sincronizando...'
++                              : 'Descargar cambios',
++                        ),
++                      ),
+                       OutlinedButton.icon(
+                         onPressed: _showConflictDemo,
+                         icon: const Icon(Icons.merge_type_outlined),
+@@ -563,7 +584,7 @@ class _SyncPrepCardState extends State<_SyncPrepCard> {
+       await AuthSessionController.instance.sendOtp(email);
+       setState(() => _message = 'Codigo enviado. Revisa tu correo.');
+     } catch (error) {
+-      setState(() => _error = error.toString());
++      setState(() => _error = formatAuthError(error));
+     } finally {
+       if (mounted) setState(() => _sendingOtp = false);
+     }
+@@ -585,7 +606,7 @@ class _SyncPrepCardState extends State<_SyncPrepCard> {
+       await AuthSessionController.instance.verifyOtp(email, otp);
+       setState(() => _message = 'Sesion validada.');
+     } catch (error) {
+-      setState(() => _error = error.toString());
++      setState(() => _error = formatAuthError(error));
+     } finally {
+       if (mounted) setState(() => _validatingOtp = false);
+     }
+@@ -618,6 +639,36 @@ class _SyncPrepCardState extends State<_SyncPrepCard> {
+     }
+   }
+ 
++  Future<void> _pullRemote() async {
++    setState(() {
++      _syncing = true;
++      _error = null;
++      _message = null;
++    });
++    try {
++      final status = await widget.syncApi.status();
++      if (!status.isPremium) {
++        setState(() => _error = 'La sincronizacion requiere plan Premium.');
++        return;
++      }
++      final result = await widget.syncApi.pullFromServer();
++      setState(() {
++        _message =
++            'Descarga lista. Servicios: ${result.importedServices} nuevos, '
++            '${result.updatedServices} actualizados, '
++            '${result.keptLocalServices} conservados en celular. Pagos: '
++            '${result.importedPayments} nuevos, '
++            '${result.updatedPayments} actualizados, '
++            '${result.keptLocalPayments} conservados en celular. '
++            'Conflictos: ${result.conflictCount}.';
++      });
++    } catch (error) {
++      setState(() => _error = error.toString());
++    } finally {
++      if (mounted) setState(() => _syncing = false);
++    }
++  }
++
+   Future<void> _showConflictDemo() async {
+     await showDialog<SyncConflictResolution>(
+       context: context,
+diff --git a/mobile/lib/features/sync/data/sync_api.dart b/mobile/lib/features/sync/data/sync_api.dart
+index a20b05b..b2dc12e 100644
+--- a/mobile/lib/features/sync/data/sync_api.dart
++++ b/mobile/lib/features/sync/data/sync_api.dart
+@@ -36,6 +36,14 @@ class SyncApi {
+     );
+     return result;
+   }
++
++  Future<LocalSyncApplyResult> pullFromServer() async {
++    final data = await _apiClient.getJson('/sync/pull') as Map<String, dynamic>;
++    return _localDatabase.applyServerSnapshot(
++      services: _jsonMapList(data['services']),
++      payments: _jsonMapList(data['payments']),
++    );
++  }
+ }
+ 
+ class SyncStatus {
+@@ -106,3 +114,11 @@ Map<String, String> _stringMap(Object? value) {
+   if (value is! Map<String, dynamic>) return const {};
+   return value.map((key, item) => MapEntry(key, item.toString()));
+ }
++
++List<Map<String, dynamic>> _jsonMapList(Object? value) {
++  if (value is! List<dynamic>) return const [];
++  return value
++      .whereType<Map>()
++      .map((item) => Map<String, dynamic>.from(item))
++      .toList();
++}
+diff --git a/mobile/lib/shared/app_access_gate.dart b/mobile/lib/shared/app_access_gate.dart
+index 8bc2b2f..39e953d 100644
+--- a/mobile/lib/shared/app_access_gate.dart
++++ b/mobile/lib/shared/app_access_gate.dart
+@@ -350,7 +350,7 @@ class _PremiumWebLoginPageState extends State<_PremiumWebLoginPage> {
+       await AuthSessionController.instance.sendOtp(email);
+       setState(() => _message = 'Codigo enviado. Revisa tu correo.');
+     } catch (error) {
+-      setState(() => _error = error.toString());
++      setState(() => _error = formatAuthError(error));
+     } finally {
+       if (mounted) setState(() => _sending = false);
+     }
+@@ -370,7 +370,7 @@ class _PremiumWebLoginPageState extends State<_PremiumWebLoginPage> {
+     try {
+       await AuthSessionController.instance.verifyOtp(email, otp);
+     } catch (error) {
+-      setState(() => _error = error.toString());
++      setState(() => _error = formatAuthError(error));
+     } finally {
+       if (mounted) setState(() => _validating = false);
+     }
+diff --git a/mobile/lib/shared/auth/auth_session_controller.dart b/mobile/lib/shared/auth/auth_session_controller.dart
+index 0aebbf6..9bf754a 100644
+--- a/mobile/lib/shared/auth/auth_session_controller.dart
++++ b/mobile/lib/shared/auth/auth_session_controller.dart
+@@ -75,8 +75,8 @@ class AuthSessionController extends ChangeNotifier {
+   Future<void> initialize() async {
+     if (_initialized || !isConfigured) return;
+     await Supabase.initialize(
+-      url: AppConfig.supabaseUrl,
+-      publishableKey: AppConfig.supabaseAnonKey,
++      url: AppConfig.normalizedSupabaseUrl,
++      publishableKey: AppConfig.normalizedSupabaseAnonKey,
+     );
+     _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((
+       _,
+@@ -93,7 +93,6 @@ class AuthSessionController extends ChangeNotifier {
+     _requireConfigured();
+     await Supabase.instance.client.auth.signInWithOtp(
+       email: email.trim().toLowerCase(),
+-      emailRedirectTo: kIsWeb ? null : 'io.supabase.flutter://signin-callback/',
+     );
+   }
+ 
+@@ -159,3 +158,22 @@ class AuthSessionController extends ChangeNotifier {
+     }
+   }
+ }
++
++String formatAuthError(Object error) {
++  final message = error.toString();
++  if (message.contains('Error sending magic link email')) {
++    return 'Supabase no pudo enviar el correo OTP. Revisa la plantilla "Magic link or OTP" y la configuracion SMTP/correo del proyecto.';
++  }
++  if (message.contains('not a valid link-local address') ||
++      message.contains('%20')) {
++    return 'La URL de Supabase parece tener espacios o caracteres invalidos. Reconstruye la app con SUPABASE_URL sin espacios.';
++  }
++  if (message.contains('Email rate limit exceeded') ||
++      message.contains('over_email_send_rate_limit')) {
++    return 'Supabase limito el envio de correos. Espera un minuto e intenta de nuevo.';
++  }
++  return message
++      .replaceFirst('AuthRetryableFetchException(message: ', '')
++      .replaceFirst('AuthApiException(message: ', '')
++      .replaceFirst('Exception: ', '');
++}
+diff --git a/mobile/test/api_cache_test.dart b/mobile/test/api_cache_test.dart
+index 63b4bd0..8f35f3a 100644
+--- a/mobile/test/api_cache_test.dart
++++ b/mobile/test/api_cache_test.dart
+@@ -44,4 +44,25 @@ void main() {
+     expect(onlineData.first['id'], 'payment-1');
+     expect(cachedData.first['service_name'], 'Internet');
+   });
++
++  test('HTML API responses are reported as API configuration errors', () async {
++    final apiClient = ApiClient(
++      baseUrl: 'https://app.pagos-recurrentes.com',
++      userId: 'user-1',
++      httpClient: MockClient(
++        (_) async => http.Response('<!DOCTYPE html><html></html>', 200),
++      ),
++    );
++
++    expect(
++      () => apiClient.getJson('/payments'),
++      throwsA(
++        isA<ApiException>().having(
++          (error) => error.message,
++          'message',
++          contains('API_BASE_URL=https://api.pagos-recurrentes.com'),
++        ),
++      ),
++    );
++  });
+ }
+diff --git a/mobile/test/local_app_database_test.dart b/mobile/test/local_app_database_test.dart
+index c8d6be7..04c8190 100644
+--- a/mobile/test/local_app_database_test.dart
++++ b/mobile/test/local_app_database_test.dart
+@@ -70,4 +70,83 @@ void main() {
+     expect(remappedPayment.userId, '33333333-3333-4333-8333-333333333333');
+     expect(await database.storedLastBootstrapAt(), isNotNull);
+   });
++
++  test('server snapshot updates local records when server is newer', () async {
++    SharedPreferences.setMockInitialValues({});
++    final database = LocalAppDatabase(userId: 'local-user');
++    final servicesApi = ServicesApi.local(database);
++    final paymentsApi = PaymentsApi.local(database);
++
++    final service = (await servicesApi.listServices(limit: 1)).first;
++    final payment = (await paymentsApi.listPayments(limit: 1)).first;
++    await database.applyServerIdMappings(
++      serviceIdMap: const {},
++      paymentIdMap: const {},
++    );
++
++    final remoteModifiedAt = DateTime.now()
++        .toUtc()
++        .add(const Duration(minutes: 1))
++        .toIso8601String();
++    final remoteService = Map<String, dynamic>.from(service.toJson())
++      ..['provider_name'] = 'proveedor web'
++      ..['last_modified_at'] = remoteModifiedAt
++      ..['last_modified_platform'] = 'server';
++    final remotePayment = Map<String, dynamic>.from(payment.toJson())
++      ..['status'] = 'paid'
++      ..['paid_amount'] = 900.0
++      ..['paid_at'] = '2026-02-28'
++      ..['last_modified_at'] = remoteModifiedAt
++      ..['last_modified_platform'] = 'server';
++
++    final result = await database.applyServerSnapshot(
++      services: [remoteService],
++      payments: [remotePayment],
++    );
++
++    final updatedService = (await servicesApi.listServices(limit: 1)).first;
++    final updatedPayment = await database.getPayment(payment.id);
++
++    expect(result.updatedServices, 1);
++    expect(result.updatedPayments, 1);
++    expect(result.conflictCount, 0);
++    expect(updatedService.providerName, 'proveedor web');
++    expect(updatedPayment.status, PaymentStatus.paid);
++    expect(updatedPayment.paidAt, DateTime(2026, 2, 28));
++    expect(await database.storedLastPullAt(), isNotNull);
++    expect(await database.storedLastSyncAt(), isNotNull);
++  });
++
++  test('server snapshot keeps local records when local is newer', () async {
++    SharedPreferences.setMockInitialValues({});
++    final database = LocalAppDatabase(userId: 'local-user');
++    final paymentsApi = PaymentsApi.local(database);
++
++    final payment = (await paymentsApi.listPayments(limit: 1)).first;
++    await database.applyServerIdMappings(
++      serviceIdMap: const {},
++      paymentIdMap: const {},
++    );
++    final olderRemotePayment = Map<String, dynamic>.from(payment.toJson())
++      ..['status'] = 'future'
++      ..['last_modified_at'] = DateTime(2026, 1, 1).toUtc().toIso8601String()
++      ..['last_modified_platform'] = 'server';
++
++    final paid = await paymentsApi.markPaid(
++      payment.id,
++      paidAmount: 123,
++      paidAt: DateTime(2026, 3, 1),
++    );
++    final result = await database.applyServerSnapshot(
++      services: const [],
++      payments: [olderRemotePayment],
++    );
++    final afterPull = await database.getPayment(payment.id);
++
++    expect(paid.status, PaymentStatus.paid);
++    expect(result.updatedPayments, 0);
++    expect(result.keptLocalPayments, 1);
++    expect(afterPull.status, PaymentStatus.paid);
++    expect(afterPull.paidAmount, 123);
++  });
+ }

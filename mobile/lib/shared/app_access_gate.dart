@@ -350,7 +350,7 @@ class _PremiumWebLoginPageState extends State<_PremiumWebLoginPage> {
       await AuthSessionController.instance.sendOtp(email);
       setState(() => _message = 'Codigo enviado. Revisa tu correo.');
     } catch (error) {
-      setState(() => _error = error.toString());
+      setState(() => _error = formatAuthError(error));
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -370,7 +370,7 @@ class _PremiumWebLoginPageState extends State<_PremiumWebLoginPage> {
     try {
       await AuthSessionController.instance.verifyOtp(email, otp);
     } catch (error) {
-      setState(() => _error = error.toString());
+      setState(() => _error = formatAuthError(error));
     } finally {
       if (mounted) setState(() => _validating = false);
     }
